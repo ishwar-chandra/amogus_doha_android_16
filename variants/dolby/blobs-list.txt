@@ -1,0 +1,16 @@
+# Dolby blobs to copy from the stock firmware into the build.
+# One path per line, relative to the vendor partition root.
+# Populated by variants/dolby/extract-from-stock.sh (or from your stock
+# firmware zip). Source of truth: the device dump of stock Android 10
+# taken 2026-10-15 (dumps/moto stock rom android 10).
+#
+# The stock /vendor inventory showed:
+#   /vendor/bin/hw/vendor.dolby.hardware.dms@1.0-service   (phase 2, NOT copied)
+#   /vendor/etc/dolby/dax-default.xml                      (61.4 KB)
+#   /vendor/etc/media_codecs_dolby_audio.xml               (phase 2, NOT copied)
+#   /vendor/lib/soundfx/libswdap.so
+#   /vendor/lib64/soundfx/libswdap.so
+#   /vendor/lib/libstagefrightdolby.so                     (old DS2 decoder path)
+vendor/lib/soundfx/libswdap.so
+vendor/lib64/soundfx/libswdap.so
+vendor/etc/dolby/dax-default.xml

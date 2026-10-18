@@ -1,0 +1,31 @@
+# doha-roms: keep both CPU clusters on schedutil.
+#
+# Why: the LineageOS 23.2 build of 2026-09-26 (christiaan's recipe, unmodified
+# device tree) was measured on 2026-10-15 with ALL EIGHT CPUs on the
+# "performance" governor, pinned at max frequency on a warm, mostly idle
+# phone (CPU6 at 58 C, skin 39.4 C). The same phone runs schedutil on stock
+# Android 10 and on crDroid 9.20 (Android 13).
+#
+# The vendor's init.qcom.post_boot.sh does set schedutil, so something that
+# runs after it switches back. Prime suspect: the AIDL power HAL
+# (android.hardware.power-service.moto-common, power-libperfmgr), which the
+# branch-16 device/motorola/common adds. This rc re-writes schedutil after
+# boot completes, and once more 10 s after the power HAL reports running.
+#
+# Verify on the phone:
+#   adb shell cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+#   adb shell cat /sys/devices/system/cpu/cpu4/cpufreq/scaling_governor
+# Both should print "schedutil". If they flip back to "performance" again,
+# the power HAL is actively pinning it - see docs/CPU-GOVERNOR.md for the
+# next debugging step (powerhint config in device/motorola/common).
+
+on property:sys.boot_completed=1
+    write /sys/devices/system/cpu/cpufreq/policy0/scaling_governor schedutil
+    write /sys/devices/system/cpu/cpufreq/policy4/scaling_governor schedutil
+    write /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq 300000
+    write /sys/devices/system/cpu/cpufreq/policy4/scaling_min_freq 300000
+
+# Second pass, delayed: if the power HAL re-pins the governor when it
+# finishes starting, this puts schedutil back and leaves it there.
+on property:sys.boot_completed=1 && property:init.svc.vendor.power-hal-aidl=running
+    exec_background - system system -- /system/bin/sh -c "sleep 10 && echo schedutil > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor && echo schedutil > /sys/devices/system/cpu/cpufreq/policy4/scaling_governor && cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor > /dev/kmsg"

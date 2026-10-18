@@ -1,0 +1,45 @@
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index 9e00b92..f1c4d90 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -31,6 +31,40 @@ ifneq ($(TARGET_PREBUILT_KERNEL),)
+       $(wildcard device/motorola/amogus-kernel/modules/*.ko)
+ endif
+ 
++# Kernel modules to load at boot, from the source-built kernel.
++# LineageOS's kernel.mk always writes vendor/lib/modules/modules.load
++# (vendor/lineage 01eef7f3), empty when this list is empty.
++# That empty file makes init.modprobe.sh skip its "load everything"
++# fallback and leaves vendor_modprobe.sh with nothing to load, so these
++# never loaded: the aw8695 haptics chip had no driver and the vibrator
++# did not work.
++#
++# 2026-10-17 doha-roms: the three TOUCH drivers are listed as well.
++# This is the runtime-verified fix for the dead touchscreen. Evidence
++# from three device dumps taken 2026-10-15 on this exact phone:
++#   - stock Android 10 (touch works): no modules.load file exists, so
++#     init.modprobe.sh runs its "load every module" fallback; himax_v2_mmi
++#     and focaltech_0flash_mmi are loaded; /sys/class/touchscreen/ft8719
++#     exists (this unit has a FocalTech FT8719 panel).
++#   - crDroid 9.20 / Android 13 (touch works): same, no modules.load;
++#     focaltech_0flash_mmi, focaltech_0flash_mmi_doha and nova_0flash_mmi
++#     all loaded; fts_* sysfs nodes present.
++#   - LineageOS 23.2 build 2026-09-26 (touch dead): modules.load exists
++#     with only aw8624 aw8695 sx933x_sar stmvl53l1; the three touch .ko
++#     files sit unused in /vendor/lib/modules, no touch driver binds, and
++#     the built-in Himax driver probes, finds no panel and gives up.
++# Loading all three touch drivers copies what the working ROMs do: the
++# ones that do not match this panel never bind. Lineage 23.2 fails the
++# build if a listed module was not built; this kernel builds all three.
++BOARD_VENDOR_KERNEL_MODULES_LOAD := \
++    aw8624 \
++    aw8695 \
++    sx933x_sar \
++    stmvl53l1 \
++    focaltech_0flash_mmi \
++    focaltech_0flash_mmi_doha \
++    nova_0flash_mmi
++
+ # Partitions
+ BOARD_VENDORIMAGE_PARTITION_SIZE := 620756992
+ BOARD_SYSTEMIMAGE_PARTITION_SIZE := 3238002688

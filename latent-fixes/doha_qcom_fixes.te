@@ -1,0 +1,82 @@
+# doha_qcom_fixes.te - fixes for avc denials observed on the 2026-09-26
+# LineageOS 23.2 build (full evidence: docs/BUG-REGISTER.md).
+# Dropped into device/qcom/sepolicy_vndr/generic/vendor/common/ by
+# scripts/apply-latent-fixes.sh (new file - no context matching needed).
+#
+# If the sepolicy compile ever rejects one block (type visibility differs
+# on a future branch), delete that block and rebuild; blocks are independent.
+#
+# Every source domain used here already has its own .te file in this
+# directory on the lineage-23.2-legacy-um branch (rild.te, fsck.te,
+# vold.te, hal_bluetooth_default.te, hal_camera_default.te,
+# hal_graphics_composer_default.te - verified 2026-10-17), so referencing
+# them from this file is compile-safe.
+
+# ---------------------------------------------------------------------------
+# B6. qcrild/rild denied traversal of /mnt/vendor (BUG-REGISTER #10)
+#
+# The RIL dispatcher thread is denied search on /mnt/vendor, the gateway
+# to /mnt/vendor/persist where qcrild keeps EFS/RF files. This is standard
+# qcom modem sepolicy that the 23.2 legacy-um branch lost. crDroid 13 has
+# the same denial - the fix applies to both.
+allow rild mnt_vendor_file:dir search;
+
+# ---------------------------------------------------------------------------
+# B7. vold denied traversal of /mnt/product (BUG-REGISTER #11)
+#
+# vold periodically stats the prodpersist mount (/mnt/product/persist)
+# and is denied - vold cannot manage that mount at all.
+allow vold mnt_product_file:dir search;
+
+# ---------------------------------------------------------------------------
+# B8. fsck denied on modem and prodpersist partitions (BUG-REGISTER #12)
+#
+# fs_mgr runs e2fsck on every ext4 fstab entry at mount time; on this
+# build it is denied read/write on /dev/block/mmcblk0p34 (modem,
+# vendor_modem_block_device) and mmcblk0p47 (prodpersist, block_device).
+# Both partitions mount unchecked every boot - a latent corruption risk
+# (prodpersist holds factory calibration data and is formattable).
+# fsck.te in this tree already allows the dsp partition the same way.
+allow fsck vendor_modem_block_device:blk_file { getattr open read write ioctl };
+allow fsck block_device:blk_file { getattr open read write ioctl };
+
+# ---------------------------------------------------------------------------
+# B9. USB HAL cannot write port_type (BUG-REGISTER #9)
+#
+# 20+ denials and recurring: the AIDL USB HAL (hal_usb_impl) cannot write
+# /sys/class/typec/port_type (vendor_sysfs_usb_c), the port role switch
+# node. USB-C role detection/OTG adapter support is degraded. crDroid
+# shows the same denial twice as often.
+allow hal_usb_impl vendor_sysfs_usb_c:file { getattr open write };
+allow hal_usb_impl vendor_sysfs_usb_c:dir search;
+
+# ---------------------------------------------------------------------------
+# B3. Bluetooth HAL cannot read Motorola vendor props (BUG-REGISTER #13)
+#
+# bluetooth@1.0-service (hal_bluetooth_default) is denied read of props
+# labeled vendor_mot_prop (Motorola BT chip/variant config in
+# /vendor/build.prop).
+allow hal_bluetooth_default vendor_mot_prop:file { getattr open read map };
+
+# ---------------------------------------------------------------------------
+# B4. Camera HAL cannot read default-prop area (BUG-REGISTER #14)
+#
+# hal_camera_default is denied reading the default_prop property area
+# (vendor build_doha.prop camera tuning props never reach the HAL).
+allow hal_camera_default default_prop:file { getattr open read map };
+
+# ---------------------------------------------------------------------------
+# B5. qcrild/rild read for the re-labelled legacy prop (BUG-REGISTER #20)
+#
+# ril.subscription.types is re-labelled to vendor_radio_prop (see
+# property_contexts.add) so vendor_init may set it again; make sure rild
+# can still read it. (Explicit expansion - no macro dependency.)
+allow rild vendor_radio_prop:file { getattr open read map };
+
+# ---------------------------------------------------------------------------
+# B10. display/composer read for the re-labelled WFD prop (BUG-REGISTER #20)
+#
+# persist.debug.wfd.enable is re-labelled to vendor_default_prop so
+# vendor_init may set it again; allow the composer daemon to read
+# vendor-default props. (Explicit expansion - no macro dependency.)
+allow hal_graphics_composer_default vendor_default_prop:file { getattr open read map };

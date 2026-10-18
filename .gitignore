@@ -1,0 +1,16 @@
+# Dolby blobs extracted from the user's own stock firmware - NEVER commit
+variants/dolby/blobs/
+variants/dolby/audio_effects.dolby-stock.xml
+
+# Build outputs / local state
+zips/
+lineage/
+*.log
+
+# Restored mirror pool is GENERATED from mirrors/repos/*.tgz - never commit
+mirrors/git/
+# the vendor transcript log is local noise
+mirrors/vendor.log
+
+# dry-run battery sandbox (generated + removed by scripts/selftest-dryrun.sh)
+.selftest-dryrun/

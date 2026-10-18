@@ -1,0 +1,33 @@
+# doha_amogus_fixes.te - fixes for avc denials observed on the 2026-09-26
+# LineageOS 23.2 build (full evidence: docs/BUG-REGISTER.md).
+# Dropped into device/motorola/amogus/sepolicy/ by
+# scripts/apply-latent-fixes.sh (new file - no context matching needed).
+#
+# If the sepolicy compile ever rejects one block (type visibility differs
+# on a future branch), delete that block and rebuild; blocks are independent.
+#
+# NOTE: rules whose SOURCE domain is declared in the qcom legacy-um tree
+# (rild, hal_bluetooth_default, hal_camera_default, fsck, vold,
+# hal_usb_impl, hal_graphics_composer_default) live in
+# doha_qcom_fixes.te instead, next to the domains' own .te files.
+
+# ---------------------------------------------------------------------------
+# B1. Sensor variant config bind-mount (BUG-REGISTER #7)
+#
+# /vendor/etc/sensors/config ships EMPTY and the boot-time bind-mount of
+# /vendor/etc/sensors/config-doha over it is denied three ways: the mount
+# needs CAP_SYS_ADMIN in the amogus-sh domain, mounton+ioctl on the target
+# dir. Result today: sensors run with zero JSON tuning, the Orientation
+# virtual sensors never appear and CapSense stays hidden (stock: 61 sensor
+# entries, this build: 55).
+allow amogus-sh self:capability sys_admin;
+allow amogus-sh vendor_sensor_data_file:dir { mounton ioctl getattr open read search };
+allow amogus-sh vendor_sensor_data_file:file { getattr open read ioctl };
+
+# ---------------------------------------------------------------------------
+# B2. modprobe cannot read /proc/cmdline (BUG-REGISTER #15)
+#
+# 8 denials per boot: every module load via init.modprobe.sh runs kmod's
+# modprobe in vendor_moto_init_shell, which is denied /proc/cmdline (it
+# matches module options passed on the kernel command line).
+allow vendor_moto_init_shell proc_cmdline:file { getattr open read };

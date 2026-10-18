@@ -1,0 +1,29 @@
+# doha-roms vendored device mirrors - generated 2026-10-17
+# format: name|source-path|remote|pinned-sha|pinned-date|upstream-url|size
+android_device_motorola_amogus|device/motorola/amogus|moto-common|de72dd4f7dbf63caa93e338bf24d962c18601b2c|2024-07-22|https://github.com/moto-common/android_device_motorola_amogus|2MB
+android_device_motorola_amogus-kernel|device/motorola/amogus-kernel|moto-common|1fb2d561ea614612b850df790baa93422dd314aa|2023-07-01|https://github.com/moto-common/android_device_motorola_amogus-kernel|19MB
+android_device_motorola_amogus_doha|device/motorola/amogus_doha|aldair402|2638aeb900d67d02ac3fc4fe8370a35e1adde161|2025-02-15|https://github.com/Aldair402/android_device_motorola_amogus_doha|1MB
+android_device_motorola_common|device/motorola/common|aldair402|8baff88cddde39bc67e0e817ac22653019341ec0|2026-06-18|https://github.com/Aldair402/android_device_motorola_common|5MB
+android_device_motorola_targets|device/motorola/targets|aldair402|ce106e503e8e4e844b552213e0c6af5be7e7768d|2025-03-20|https://github.com/Aldair402/android_device_motorola_targets|1MB
+android_device_qcom_common|device/qcom/common|aospa|4898502afe2b81c999c8a7224a837bf5e0b02f06|2024-09-12|https://github.com/AOSPA/android_device_qcom_common|4MB
+android_device_qcom_qssi|device/qcom/qssi|aospa|dc16714f7004f6b47114e6d0c953c1d0fa5749e4|2023-11-26|https://github.com/AOSPA/android_device_qcom_qssi|1MB
+android_device_sony_sepolicy|device/sony/sepolicy|moto-common|f80fb521f326f5a8e1b19451594bf6ddbd727b82|2023-06-25|https://github.com/moto-common/android_device_sony_sepolicy|1MB
+android_external_fastrpc|external/fastrpc|aospa|a83e9c19925dcaf77fa42aefaa0be8eed74e4974|2023-10-07|https://github.com/AOSPA/android_external_fastrpc|1MB
+android_hardware_motorola|hardware/motorola|moto-common|f805e9ef6f64e0dad5b9ee47cc6e094a2b3db9b0|2024-04-23|https://github.com/moto-common/android_hardware_motorola|1MB
+android_kernel_motorola_msm-4.14|kernel/motorola/msm-4.14|aldair402|6509e92ea176e84fe2723fa45df63a6b56adee2d|2026-06-12|https://github.com/Aldair402/android_kernel_motorola_msm-4.14|1483MB
+android_vendor_motorola_amogus|vendor/motorola/amogus|aldair402|85187ccfe24f696f8ccfc68f2f03529fc0caa98f|2025-01-21|https://github.com/Aldair402/android_vendor_motorola_amogus|116MB
+android_vendor_motorola_amogus_doha|vendor/motorola/amogus_doha|aldair402|7b6d8adfee61b37bea3f08715d89936dd74d6849|2025-02-02|https://github.com/Aldair402/android_vendor_motorola_amogus_doha|1MB
+android_vendor_motorola_common|vendor/motorola/common|moto-common|5cfff4dfe2e257fd1c9df4176ffd1bbf3bd99f20|2024-04-19|https://github.com/moto-common/android_vendor_motorola_common|14MB
+platform_hardware_qcom_bootctrl|hardware/qcom/bootctrl|moto-common|bf0e3210326e5237bdd978f8205c31e7341f2e04|2024-01-20|https://github.com/moto-common/platform_hardware_qcom_bootctrl|1MB
+platform_prebuilts_clang_host_linux-x86_clang-r383902|prebuilts/clang/host/linux-x86/clang-r383902|moto-common|8a74b63a5f9328ab91ba6b48e37c9627ae85c206|2023-03-20|https://github.com/moto-common/platform_prebuilts_clang_host_linux-x86_clang-r383902|259MB
+platform_vendor_qcom_opensource_audio_sm8150|vendor/qcom/opensource/audio/sm8150|aldair402|d0dbea0f17eb102c82c880e913bf6ccdc0bfb13d|2026-06-19|https://github.com/Aldair402/platform_vendor_qcom_opensource_audio_sm8150|10MB
+platform_vendor_qcom_opensource_audio_st-hal|vendor/qcom/opensource/audio/st-hal|moto-common|bd8a1001918c1d83b6c9a9220252844e12c0580d|2024-05-12|https://github.com/moto-common/platform_vendor_qcom_opensource_audio_st-hal|1MB
+platform_vendor_qcom_opensource_data-ipa-cfg-mgr|vendor/qcom/opensource/data-ipa-cfg-mgr|moto-common|a2152b4042748aae7a7b954e1bdd89d97f48c20b|2024-02-16|https://github.com/moto-common/platform_vendor_qcom_opensource_data-ipa-cfg-mgr|2MB
+platform_vendor_qcom_opensource_data-ipa-cfg-mgr-legacy-um|vendor/qcom/opensource/data-ipa-cfg-mgr-legacy|moto-common|d20dd73a194147632b3eae4e0773d9b524a00570|2024-09-23|https://github.com/moto-common/platform_vendor_qcom_opensource_data-ipa-cfg-mgr-legacy-um|2MB
+platform_vendor_qcom_opensource_display-commonsys-intf|vendor/qcom/opensource/display-commonsys-intf|moto-common|c23805998ffd8c61035c7ec17916e0decef0167d|2024-09-23|https://github.com/moto-common/platform_vendor_qcom_opensource_display-commonsys-intf|19MB
+platform_vendor_qcom_opensource_display_sm8150|vendor/qcom/opensource/display/sm8150|moto-common|b2f90a6f2ed9e2c87478cbabf798bd6982d7992c|2023-10-11|https://github.com/moto-common/platform_vendor_qcom_opensource_display_sm8150|8MB
+platform_vendor_qcom_opensource_gps-legacy|vendor/qcom/opensource/gps/legacy|aldair402|365d6682a3b4b8d92e6c615d2ef8d19fb6a6bf39|2026-06-19|https://github.com/Aldair402/platform_vendor_qcom_opensource_gps-legacy|5MB
+platform_vendor_qcom_opensource_media_sm8150|vendor/qcom/opensource/media/sm8150|moto-common|f841fe095a16eb85241065122d7f61c572c9e517|2023-03-18|https://github.com/moto-common/platform_vendor_qcom_opensource_media_sm8150|7MB
+platform_vendor_qcom_opensource_recovery-ext|vendor/qcom/opensource/recovery-ext|moto-common|1e7886185b9d29312f52453925764eecb9ba1847|2024-01-20|https://github.com/moto-common/platform_vendor_qcom_opensource_recovery-ext|1MB
+platform_vendor_qcom_opensource_thermal|vendor/qcom/opensource/thermal|moto-common|d90b0d8fbc80521e7fb9f3bc45e0099e90ee9fbf|2024-01-14|https://github.com/moto-common/platform_vendor_qcom_opensource_thermal|1MB
+proprietary_vendor_qcom_common|vendor/qcom/common|aospa-vendor|50d32904db70c6a786963b255f92f24c8a0ccb79|2024-09-15|https://github.com/ThankYouMario/proprietary_vendor_qcom_common|1430MB

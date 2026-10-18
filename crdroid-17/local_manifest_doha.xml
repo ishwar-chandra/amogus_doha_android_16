@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  doha-roms / crdroid-17: LOCAL manifest for the Moto G8 Plus (doha).
+
+  Usage: repo init against crdroidandroid/android branch 17.0 (the pinned
+  copy in this directory, default.xml + snippets), then drop THIS file into
+  $SRC/.repo/local_manifests/doha.xml BEFORE the first sync. It adds the 5
+  doha community projects that crDroid's manifest does not carry.
+
+  The community pins are the same commits the working Android 16 recipe
+  uses (verified by the 2026-10-26 build that boots on the phone):
+
+    kernel            Aldair402/android_kernel_motorola_msm-4.14        branch 15 @ 6509e92
+    device tree       Aldair402/android_device_motorola_amogus_doha     branch 2.1 @ 2638aeb
+    device common     Aldair402/android_device_motorola_common          branch 16  @ 8baff88
+    moto device bits  moto-common/android_device_motorola_amogus        branch 14  @ de72dd4
+    vendor blobs      Aldair402/android_vendor_motorola_amogus          branch 15  @ 85187cc
+
+  The remaining doha projects (targets, amogus-kernel, the AOSPA and
+  ThankYouMario repos, hardware/motorola, ...) can be copied from
+  lineage-16/default.xml - they are platform-agnostic enough to sync for
+  Android 17 as a starting point, though expect pins to need bumps.
+
+  NOTE: pins in a moving branch (lineage-24.0 tracks daily). After your
+  first successful sync, pin everything with `repo manifest -r` and use
+  THAT as your manifest, exactly like the lineage-16 target does.
+-->
+<manifest>
+  <remote name="aldair402" fetch="https://github.com/Aldair402/" />
+  <remote name="moto-common" fetch="https://github.com/moto-common/" />
+  <remote name="aospa" fetch="https://github.com/AOSPA/" />
+  <remote name="aospa-vendor" fetch="https://github.com/ThankYouMario/" />
+
+  <project name="android_kernel_motorola_msm-4.14" path="kernel/motorola/msm-4.14"
+           remote="aldair402" revision="6509e92ea176e84fe2723fa45df63a6b56adee2d"
+           upstream="15" dest-branch="15" groups="local::doha" />
+  <project name="android_device_motorola_amogus_doha" path="device/motorola/amogus_doha"
+           remote="aldair402" revision="2638aeb900d67d02ac3fc4fe8370a35e1adde161"
+           upstream="2.1" dest-branch="2.1" groups="local::doha" />
+  <project name="android_device_motorola_common" path="device/motorola/common"
+           remote="aldair402" revision="8baff88cddde39bc67e0e817ac22653019341ec0"
+           upstream="16" dest-branch="16" groups="local::doha" />
+  <project name="android_device_motorola_amogus" path="device/motorola/amogus"
+           remote="moto-common" revision="de72dd4f7dbf63caa93e338bf24d962c18601b2c"
+           upstream="14" dest-branch="14" groups="local::doha" />
+  <project name="android_vendor_motorola_amogus" path="vendor/motorola/amogus"
+           remote="aldair402" revision="85187ccfe24f696f8ccfc68f2f03529fc0caa98f"
+           upstream="15" dest-branch="15" groups="local::doha" />
+
+  <!-- remaining doha projects: copy the project lines from
+       ../lineage-16/default.xml (grep "local::doha"), bump pins as needed:
+       device/motorola/targets, device/motorola/amogus-kernel,
+       vendor/motorola/amogus_doha, vendor/motorola/common,
+       device/qcom/common, device/qcom/qssi, hardware/qcom/bootctrl,
+       hardware/motorola, external/fastrpc, vendor/qcom/opensource/* -->
+</manifest>

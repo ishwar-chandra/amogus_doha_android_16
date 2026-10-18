@@ -1,0 +1,14 @@
+# doha-roms property_contexts additions (appended, marker-checked, by
+# scripts/apply-latent-fixes.sh). Fixes BUG-REGISTER #20: legacy qcom prop
+# names whose vendor prop-file writes are denied at every boot on
+# Android 16 because the default labelling makes them system-owned.
+#
+# ril.subscription.types: qcrild reads this to configure per-slot
+# subscription modes; the vendor prop file write has been silently
+# failing on every boot since Android 13 on this tree family.
+# persist.debug.wfd.enable: WFD (Miracast) default switch.
+#
+# Longest-prefix wins in property_contexts, so these exact names override
+# the generic system prefixes (ril., persist.debug.).
+ril.subscription.types    u:object_r:vendor_radio_prop:s0
+persist.debug.wfd.enable  u:object_r:vendor_default_prop:s0
