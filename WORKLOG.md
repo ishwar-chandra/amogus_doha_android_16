@@ -7,11 +7,11 @@ and "Open items" sections are what you extend.
 
 Everything below is chronological. "Result:" lines state what was
 OBSERVED, not what was hoped. Known past errors are included on purpose
-(see §D6) — they are the cheapest way to not repeat them.
+(see §B item 8 and §F) — they are the cheapest way to not repeat them.
 
 ---
 
-## 0. The project at a glance (state as of 2026-10-17)
+## 0. The project at a glance (state as of 2026-10-18, after Session 9)
 
 - **Device:** Motorola Moto G8 Plus, codename `doha`, build target
   `amogus_doha`, XT2019-1/2, Snapdragon 665 (trinket), 4 GB RAM,
@@ -43,6 +43,16 @@ OBSERVED, not what was hoped. Known past errors are included on purpose
   mirror pool and repoints repo sync at file:// copies; after
   `bash doha.sh vendor`, no build step contacts the community
   upstreams. See docs/MIRRORS.md + §D5.**
+- **Since Session 9 (2026-10-18):** a second Android 16 ROM base,
+  **crDroid 12.x** (`crdroid-16/`, `bash doha.sh buildcr16`, menu 12), built
+  from the same device projects, patches, latent fixes and variants.
+  **All 17 patches are now verified** with `git apply --check` against the
+  exact upstream commits for BOTH ROMs (crdroid-16/VERIFIED.md). Also fixed:
+  restore-mirrors silently doing nothing on a read-only kit mount (the
+  README's old Docker command), and the debloat calculator name. Nothing
+  from Sessions 4-9 has been built or flashed yet. Caveat for the chat zip:
+  it carries 23 of 27 mirror tarballs (the 4 largest are left out) - run
+  `bash doha.sh vendor` once. See Session 9 at the end of this file.
 
 ## A. Session 0 — christiaan builds the base (2026-09-25/26)
 
@@ -496,12 +506,28 @@ shipped zip.
 7. crDroid 17 bring-up (crdroid-17/README.md steps, incl. step 6:
    latent-fixes) — only after 1-4.
 8. When re-syncing: handle the 44 moved LineageOS pins + rebase the
-   `hardware/nxp/nfc` and `system/core` patches.
+   `hardware/nxp/nfc` and `system/core` patches. (2026-10-18: the nfc patch
+   still applies to today's lineage-23.2 head 1459e3f2, and the system/core
+   patch applies to crDroid's fork head; LineageOS's own system/core head
+   was not checked.)
 9. Consider eBPF backports into msm-4.14 (the OnePlus-7-sm8150 route)
    only if BPF feature loss becomes a real problem on 16/17.
 10. After first flash of the fixed build: re-grep denials — any NEW
     prop-set denials on Android 16 get the same property_contexts.add
     treatment (pattern documented in BUG-REGISTER #20).
+11. **crDroid 12.x (Android 16) first build**: `bash doha.sh buildcr16`
+    (crdroid-16/README.md lists what can go wrong; the likeliest first
+    failures are Soong/Make differences in crDroid's build/make + build/soong
+    forks, then a sepolicy block in latent-fixes/). Do it after item 1 so the
+    LineageOS build is the known-good reference, or in parallel on Crave.
+12. **Complete the mirror pool**: the chat zip omits the 4 largest
+    tarballs (kernel 1.5 GB, Qualcomm proprietary blobs 1.4 GB, clang
+    prebuilt 259 MB, Motorola vendor blobs 116 MB). `bash doha.sh vendor`
+    (menu 11) re-fetches them in 10-15 min; then archive the FULL set
+    (GitHub history or the GDrive). Until then those upstreams are the
+    only copy - the clang prebuilt comes from the archived moto-common org.
+13. Docs/debloat: confirm after the first gapps flash that the calculator
+    is gone (module name fixed to ExactCalculator in Session 9).
 
 ## H. Where things live (map for future agents)
 
@@ -536,10 +562,14 @@ shipped zip.
   the never-remove list.
 - Be explicit about what is verified vs not. The credibility of this
   repo rests on that distinction.
+- ROM-specific patch differences go in `crdroid-16/patches/<project>.patch`
+  (an overlay that replaces the same-named lineage-16 patch) — never a
+  copy of the whole set. `ROM_TARGET` (lineage16|crdroid16) is the only
+  switch build.sh knows about; each ROM gets its OWN source tree.
 
 ---
 
-## D5. Session 7 — vendoring ALL 27 device repos into the kit (2026-10-17, chat 6) ← CURRENT
+## D5. Session 7 — vendoring ALL 27 device repos into the kit (2026-10-17, chat 6)
 
 **Input:** user: "I want to create a complete kit repo, but all code in
 one. This repo is not referenced or pinned. Is it ok to clone all that
@@ -649,3 +679,102 @@ line shows both; `.selftest-dryrun/` gitignored.
 repo sync of 1,157 platform projects, Soong compile, phone flash/dump
 paths, and the actual Colab session — those need the build machine,
 the phone, and a Colab runtime respectively.
+
+
+## Session 9 (2026-10-18) — crDroid 12.x (Android 16) as a second ROM base ← CURRENT
+
+**Request:** "i want crdroid android 16 as well" (in addition to the
+LineageOS 23.2 target and the crDroid 17 bring-up kit).
+
+**What was found (read from the sources, not assumed):**
+
+- crDroid has a maintained Android 16 branch: `crdroidandroid/android`
+  `16.0` (also `16.0-qpr0`, `16.0-qpr1`). Head `7aeb04f9` on 2026-10-18;
+  `vendor/crdroid config/version.mk` says v12.13. It uses AOSP
+  `android-16.0.0_r4` and default branch `lineage-23.2` — the base of the
+  proven LineageOS build. `breakfast <device>` lunches `lineage_<device>`,
+  so `lineage_amogus_doha` applies unchanged. `LINEAGE_VERSION` =
+  `crDroidAndroid-16.0-<date>-<build>-v12.13`; `bacon` MOVES the zip to
+  `$OUT/$LINEAGE_VERSION.zip` and DELETES `target_files_intermediates`.
+- Manifest comparison (LineageOS pinned manifest 1,184 projects vs crDroid
+  merged 1,182): the only path collision with the 27 doha projects is
+  `external/fastrpc` (AOSP's vs the AOSPA fork) → `remove-project`; only 2
+  LineageOS-manifest projects are absent from crDroid (`google-sans-flex`,
+  `packages/overlays/Lineage`); 26 extras (crDroid apps, newer SoC dirs, darwin
+  prebuilts). `vendor/qcom/opensource/data-ipa-cfg-mgr-legacy-um` (LineageOS)
+  and the doha `...-legacy` fork both declare a `soong_namespace`, so no
+  duplicate-module clash is expected. crDroid forks `build/make`,
+  `build/soong`, `system/core`, `packages/modules/Connectivity`,
+  `device/lineage/sepolicy` (→ android_device_crdroid_sepolicy), `vendor/lineage`
+  (→ android_vendor_crdroid). Only `FaceUnlock` comes from gitlab.com.
+  The relative `github` remote (`fetch=".."`) had to become absolute: it
+  resolves against the manifest repo URL, which here is a local path.
+- **Patches (the key finding):** all 17 `git apply --check` clean on the
+  exact commits — EXCEPT `packages/modules/Connectivity` on crDroid's fork
+  (NetBpfLoad.cpp, BpfHandler.cpp). Reason: crDroid's fork already contains
+  the same kernel-gate relaxations (4.9/4.14/4.19/5.4 as warnings, no gates in
+  BpfHandler). Only the BpfNetMaps.java hunks (10) are still needed →
+  `crdroid-16/patches/packages/modules/Connectivity.patch`. Full record with
+  commits: `crdroid-16/VERIFIED.md`. This also closed a gap for the
+  LineageOS target: 9 of its 17 patches had only ever been tried on mocks;
+  all 17 now apply to their exact pins (device repos via the mirrors, the
+  3 too-large repos via the touched files at the pinned SHA, platform repos
+  via codeload at the pinned SHA).
+
+**What was built (all in this repo):**
+
+- `crdroid-16/default.xml` — ONE self-contained manifest generated by
+  `crdroid-16/refresh-manifest.sh` (crDroid 16.0 + snippets inlined +
+  absolute github remote + the 4 community remotes + the 27 doha projects
+  copied verbatim from the root manifest + the fastrpc remove-project);
+  1,208 projects; the generator self-checks repo-style processing.
+- `lineage-16/build.sh`: `ROM_TARGET=lineage16|crdroid16`, `MANIFEST_FILE`,
+  `PATCH_OVERLAY` (union of patch names; overlay file wins), `ZIP_PREFIX`,
+  product-dir fallback for boot/dtbo/vbmeta, crDroid debloat addition,
+  records `<src>/.repo/doha-crdroid16-pins.xml` after each crDroid sync,
+  refuses a manifest that is not committed (`repo init` reads the committed
+  branch). Defaults reproduce the old LineageOS behaviour exactly.
+- `doha.sh`: `--rom lineage|crdroid`, `buildcr16`, menu 12, separate source
+  dir `SRCCR16` (default `~/doha/src-crdroid16`; `save_conf` never overwrites
+  the LineageOS `SRC`), status line, setup now checks BOTH manifests are
+  committed, selftest runs the new suite. Menu numbers 1-11 unchanged.
+- `variants/debloat-crdroid.mk` (Gallery2); `scripts/selftest-crdroid16.sh`
+  (25 assertions: manifest soundness, overlay validity, real build.sh with
+  `ROM_TARGET=crdroid16` on a mock tree incl. proof the overlay patch is the
+  one in effect, debloat rendering both ways, bad ROM_TARGET refused).
+
+**Bugs found in the existing kit and fixed (flagged because they change
+documented behaviour):**
+
+1. `restore-mirrors.sh` on a read-only kit (the README's Docker command
+   used `-v "$PWD:/manifest:ro"`): it exited 0 having restored ZERO mirrors
+   and wrote a local manifest that removed the upstream entries and pointed
+   them at folders that do not exist → `repo sync` would have failed for 23
+   device repos. Reproduced with a mock (unprivileged user, read-only kit).
+   Fix: exit 1 with a clear message when `mirrors/git` is not writable
+   (build.sh then falls back to upstream, per its existing handling) and the
+   README command no longer uses `:ro`.
+2. `variants/debloat.mk` filtered `Calculator2`, but LineageOS 23.2 and
+   crDroid add the calculator as `ExactCalculator` (checked in
+   vendor/lineage config/common.mk) → the safe tier silently kept the
+   calculator although docs/DEBLOAT.md lists it as removed. Both names are
+   filtered now. This changes the gapps+safe edition (calculator removed).
+3. This file: the `§D6` pointer had no target (past errors are in §B item 8 /
+   §F), the CURRENT marker and §0 snapshot were stale, and the mirror-tarball
+   caveat lived only in Session 7's delivery note.
+
+**Test status (2026-10-18):** selftest-paths 15/15; selftest-crdroid16 25/25;
+dry-run battery **94 passed, 7 failed — identical to the baseline run of the
+shipped chat zip before any change**. The 7 are all caused by that zip
+omitting 4 mirror tarballs (4 "missing tarball", "27 of 27 present", and the
+vendor-resume check that times out re-fetching them); they pass once
+`bash doha.sh vendor` has run. The earlier "97/97" was for a full-mirror kit.
+
+**NOT verified:** a real `repo sync` of the crDroid tree, the Soong/Make
+compile on crDroid's build forks, the sepolicy compile against
+android_device_crdroid_sepolicy, boot, and anything on the phone. A quick web
+search found no crDroid 12 build for doha (not exhaustive).
+
+**Next:** §G items 0-4 (LineageOS build + flash + flash-checks) remain the
+priority; then item 11 (first crDroid 16 build) and item 12 (complete the
+mirror pool).

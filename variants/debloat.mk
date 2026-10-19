@@ -21,4 +21,7 @@
 PRODUCT_PACKAGES := $(filter-out Jelly Twelve Etar Glimpse Recorder,$(PRODUCT_PACKAGES))
 
 # --- AOSP apps with direct Google equivalents ---
-PRODUCT_PACKAGES := $(filter-out Calculator2,$(PRODUCT_PACKAGES))
+# (LineageOS 23.2 and crDroid add the calculator as ExactCalculator - checked in
+# vendor/lineage config/common.mk on 2026-10-18; Calculator2 is the older AOSP name
+# and was a silent no-op on those trees. Both are listed.)
+PRODUCT_PACKAGES := $(filter-out Calculator2 ExactCalculator,$(PRODUCT_PACKAGES))

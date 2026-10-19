@@ -4,14 +4,16 @@
 >
 > It opens the interactive menu - setup, source sync, build (with all 17
 > patches, latent-bug fixes and variants applied AUTOMATICALLY - you never
-> run a patch manually), kernel-only builds, the Android 17 bring-up,
+> run a patch manually), kernel-only builds, the crDroid 12.x (Android 16)
+> build, the Android 17 bring-up,
 > self-tests, the flash assistant, post-flash checks, debug dumps and
 > cloud-build guidance. Everything is menu-driven; every action is logged
 > to `logs/`. Power users: `bash doha.sh help` for the non-interactive
-> commands (`build16 --variant gapps`, `sync`, `selftest`, ...).
+> commands (`build16 --variant gapps`, `buildcr16`, `sync`, `selftest`, ...).
 
 Everything needed to build, verify and improve **LineageOS 23.2 (Android 16)**
-and to start a **crDroid 17 (Android 17)** port for the Moto G8 Plus
+and **crDroid 12.x (Android 16)**, and to start a **crDroid 17 (Android 17)**
+port for the Moto G8 Plus
 (`doha`, XT2019-1/2, Snapdragon 665/trinket, `amogus_doha` build target),
 based on a proven recipe and **runtime-verified fixes** from three device
 dumps.
@@ -42,6 +44,7 @@ See `docs/MIRRORS.md`.
 | 8 | **Editions**: `nogapps` (default, all apps) and `gapps` (debloated ROM + MindTheGapps sideload = Play services + Play Store only) | design doc | variants/, docs/DEBLOAT.md |
 | 9 | **crDroid 17 bring-up kit** (manifests, local manifest, patch re-target map, ordered plan) | research, Oct 2026 | `crdroid-17/` |
 | 10 | **flash-checks.sh** — 60-second post-flash verification of everything above (7 sections) | new | `scripts/flash-checks.sh` |
+| 11 | **crDroid 12.x on Android 16 as a second ROM base** — crDroid's own 16.0 manifest + the same 27 doha projects, the same patches (Connectivity swapped for a crDroid variant), latent fixes and variants. **All 17 patches verified** with `git apply --check` against the exact upstream commits (both ROMs). Not built or flashed yet | research + patch checks, 2026-10-18 | `crdroid-16/`, `bash doha.sh buildcr16` |
 
 ## Repo layout
 
@@ -61,6 +64,12 @@ doha-roms/
 ├── lineage-16/              ⭐ the proven target: LineageOS 23.2 + fixes
 │   ├── build.sh             sync + patch + latent-fixes + variants + build
 │   └── patches/             17 patches (16 carried from base + touch fix extended)
+├── crdroid-16/              second ROM base: crDroid 12.x on Android 16 (NOT built yet)
+│   ├── default.xml          crDroid 16.0 + the 27 doha projects, self-contained (1,208 projects)
+│   ├── refresh-manifest.sh  regenerates default.xml from crDroid's branch (needs network)
+│   ├── patches/             per-project overrides of lineage-16/patches (Connectivity only)
+│   ├── README.md            how to build, what differs, what is unknown
+│   └── VERIFIED.md          all 17 patches checked against the exact upstream commits
 ├── latent-fixes/            the 2026-10 latent-bug fix layer
 │   ├── doha_amogus_fixes.te        sepolicy B1-B5 (sensor mount, HALs, modprobe)
 │   ├── doha_qcom_fixes.te          sepolicy B6-B10 (rild, vold, fsck, USB OTG)
@@ -74,6 +83,7 @@ doha-roms/
 │   ├── init.doha.cpugov.rc  CPU governor guard (installed by every build)
 │   ├── debloat.mk           safe-tier removals (gapps edition)
 │   ├── debloat-aggressive.mk
+│   ├── debloat-crdroid.mk   crDroid-only additions to the debloat tiers
 │   └── dolby/               blob list, extract + wiring scripts, dolby.mk
 ├── cloud/
 │   └── colab_doha.sh      Google Colab session wrapper (CPU runtime; see docs/BUILD-INFRA.md)
@@ -83,6 +93,7 @@ doha-roms/
 │   ├── flash-checks.sh      post-flash verification (7 sections)
 │   ├── apply-latent-fixes.sh installs the latent-fixes layer into the tree
 │   ├── selftest-paths.sh    regression test: build.sh path resolution (15 checks)
+│   ├── selftest-crdroid16.sh offline test of the crDroid 16 target (manifest, overlay, mock build; 25 checks)
 │   ├── selftest-dryrun.sh   ⭐ 97-check dry-run battery over EVERY script (no prerequisites)
 │   └── debug_device.sh      the full diagnostic dumper (v3, made the 3 dumps)
 └── docs/
@@ -112,7 +123,7 @@ mkdir -p ~/doha/src ~/doha/ccache ~/doha/zips
 
 # nogapps (default)
 docker run --rm -it --user "$(id -u):$(id -g)" -e HOME=/tmp \
-  -v "$PWD:/manifest:ro" -v ~/doha/src:/src \
+  -v "$PWD:/manifest" -v ~/doha/src:/src \
   -v ~/doha/ccache:/ccache -e CCACHE_DIR=/ccache \
   -v ~/doha/zips:/zips -e ZIP_DIR=/zips \
   --entrypoint /manifest/lineage-16/build.sh \
@@ -122,10 +133,25 @@ docker run --rm -it --user "$(id -u):$(id -g)" -e HOME=/tmp \
 #   -e VARIANT=gapps -e DOLBY=1   (Dolby needs variants/dolby/blobs/ first:
 #                                  bash variants/dolby/extract-from-stock.sh
 #                                  with stock booted, once, on the phone)
+
+# crDroid 12.x (Android 16) instead of LineageOS: its OWN source dir + ROM_TARGET
+#   -e ROM_TARGET=crdroid16 -v ~/doha/src-crdroid16:/src     (see crdroid-16/README.md)
 ```
 
 Without Docker: install the LineageOS build deps + `repo`, then
 `bash lineage-16/build.sh ~/doha/src`.
+
+The kit is mounted read-write on purpose: build.sh unpacks the vendored
+mirrors into `mirrors/git/` inside it. (With `:ro` the unpack silently did
+nothing; `restore-mirrors.sh` now fails loudly and the sync falls back to
+upstream instead.)
+
+### Building crDroid 12.x (Android 16) instead of / as well as LineageOS
+
+`bash doha.sh buildcr16` (menu 12; same as `build16 --rom crdroid`). Own
+source tree (`~/doha/src-crdroid16`), same patches, fixes and editions.
+**Not built or flashed yet** - read `crdroid-16/README.md` first (what
+differs, what can go wrong) and keep your LineageOS zip as the fallback.
 
 Options: `JOBS`, `SYNC_JOBS=4`, `SKIP_SYNC=1` (rebuilds), `CCACHE_SIZE`,
 `SKIN_THROTTLE_C`, `ZIP_DIR`, `VARIANT`, `DEBLOAT`, `DOLBY`.
@@ -135,12 +161,16 @@ regression-tests the script's path resolution against a mock tree.
 
 ### Self-tests (run anywhere — no network, phone, repo tool or AOSP tree needed)
 
-`bash doha.sh selftest` (menu 7) runs both:
+`bash doha.sh selftest` (menu 7) runs all three:
 
 * `scripts/selftest-paths.sh` — 15 assertions: build.sh discovers all 17
   patches, applies latent fixes, renders the variant layer, writes the stamp
   (regression test for the path bug that would have silently built an
   unpatched ROM).
+* `scripts/selftest-crdroid16.sh` — 25 assertions: the crDroid 16 manifest is
+  consistent (the 27 doha pins identical to the LineageOS manifest), the patch
+  overlay is valid, and the real build.sh with `ROM_TARGET=crdroid16` runs its
+  patch / fix / variant layers against a mock tree.
 * `scripts/selftest-dryrun.sh` — 97-assertion dry-run battery over every
   script in the kit: syntax, manifest XML validity, mirror-store integrity
   (27 tarballs gzip-CRC-checked, pins == manifest), a sandboxed
@@ -152,6 +182,11 @@ regression-tests the script's path resolution against a mock tree.
   of the phone scripts, and the Colab guard. Found and fixed two real bugs
   on its first run: `doha.sh sync` faking success when piped, and
   debug_device.sh leaving a stray dump dir when adb is missing.
+
+  The mirror-store checks expect all 27 tarballs. A kit zip that leaves out
+  the 4 largest (kernel, qcom blobs, clang, Motorola blobs - about 3.2 GB)
+  fails 7 of the battery's checks until `bash doha.sh vendor` has fetched
+  them; everything else passes.
 
 ### Building in the cloud (Colab / Crave / Kaggle / GDrive)?
 
@@ -170,6 +205,7 @@ Unlocked bootloader; A/B device; recovery lives in `boot`.
 1. `fastboot flash boot lineage-...-boot.img` (only coming from stock/another ROM)
 2. Recovery → factory reset when coming from another ROM →
    **Apply update → Apply from ADB** → `adb sideload lineage-23.2-*.zip`
+   (crDroid build: `crDroidAndroid-16.0-*.zip`)
 3. GApps edition: at the **"Install additional zip?"** prompt answer
    **Yes** and `adb sideload MindTheGapps-*.zip` (Play services + Play
    Store only — everything else from the Play Store afterwards)
@@ -192,6 +228,7 @@ this device is expected and harmless.
 | **Calls on Vi (SIM 1)** | ⚠️ root cause found, run the docs/SIM1-CALLS.md test and report |
 | **CPU governor / heat / battery** | ✅ expected fixed by the guard (verify with flash-checks) |
 | **Dolby** | 🧪 experimental (DOLBY=1, first build+listen test pending) |
+| Android 16 on crDroid 12.x | 🚧 inputs verified (manifest + all 17 patches), NOT yet built or flashed — see crdroid-16/README.md |
 | Android 17 (crDroid) | 🚧 bring-up kit only — see crdroid-17/README.md |
 
 ## Brick safety

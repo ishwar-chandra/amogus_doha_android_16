@@ -33,7 +33,7 @@ supported, boring, reliable path.
 | org.lineageos.etar (Etar calendar) | Etar | Google Calendar |
 | org.lineageos.glimpse (Glimpse gallery) | Glimpse | Google Photos |
 | org.lineageos.recorder (Recorder) | Recorder | Google Recorder / any recorder |
-| com.android.calculator2 (Calculator) | Calculator2 | Google Calculator |
+| com.android.calculator2 (Calculator) | ExactCalculator (Calculator2 on plain AOSP) | Google Calculator |
 | org.lineageos.audiofx (AudioFX) | AudioFX | (removed only when DOLBY=1 — replaced by the Dolby effect) |
 
 A wrong module name is a SAFE failure: the app simply stays installed.
@@ -82,3 +82,17 @@ com.android.providers.*, com.android.soundpicker, com.android.webview (via WebVi
 org.lineageos.aperture, audiofx, backgrounds, camelot, etar, glimpse, jelly,
 lineageparts, profiles, recorder, setupwizard, twelve, updater`.
 Everything not in the removal tables above stays in every edition.
+
+## crDroid 12.x (ROM_TARGET=crdroid16) additions
+
+`variants/debloat-crdroid.mk` is appended after `debloat.mk` when building
+crDroid. Module names were read from `android_vendor_crdroid` branch `16.0`
+(2026-10-18). Removed in addition to the table above: **Gallery2** (older
+gallery crDroid lists next to Glimpse; Google Photos replaces both). Kept on
+purpose: Aperture, AudioFX, Seedvault, ThemePicker/Backgrounds and the
+crDroid-only apps with no Google equivalent (GameSpace, OmniJaws weather,
+MatLog, AppLocker, ThemeStore, LMOFreeform, ...).
+
+Note (2026-10-18): the calculator row used to name only `Calculator2`, which
+is not what LineageOS 23.2 or crDroid add (they add `ExactCalculator`), so the
+calculator silently stayed installed. Both names are now filtered.

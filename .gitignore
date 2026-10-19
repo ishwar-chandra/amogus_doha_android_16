@@ -14,3 +14,6 @@ mirrors/vendor.log
 
 # dry-run battery sandbox (generated + removed by scripts/selftest-dryrun.sh)
 .selftest-dryrun/
+
+# crDroid 16 target: self-test sandbox + user-made pin snapshots stay local until committed on purpose
+.selftest-mock-cr16/

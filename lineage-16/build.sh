@@ -37,6 +37,13 @@
 #   DEBLOAT       none | safe | aggressive (default: safe when VARIANT=gapps)
 #   DOLBY         0 (default) or 1 - bundle the stock Dolby blobs
 #   LATENT_FIXES  1 (default) or 0 - skip the latent-bug fix layer
+#   ROM_TARGET    lineage16 (default) or crdroid16 = crDroid 12.x on Android
+#                 16: manifest crdroid-16/default.xml, patch overrides in
+#                 crdroid-16/patches/. Needs its OWN source dir (not the
+#                 LineageOS tree). doha.sh: --rom crdroid / buildcr16.
+#   MANIFEST_FILE manifest inside this repo (default depends on ROM_TARGET)
+#   PATCH_OVERLAY dir of per-project patch overrides (default depends on
+#                 ROM_TARGET; empty for lineage16)
 #
 # GApps note: the ROM zip itself never contains Google code. For the gapps
 # edition, sideload MindTheGapps (Play services + Play Store only) right
@@ -61,6 +68,25 @@ REPOROOT=$(cd "$HERE/.." && pwd)
 MANIFEST_URL=${MANIFEST_URL:-$REPOROOT}
 DEVICE=amogus_doha
 
+# ROM_TARGET picks the base ROM (doha.sh sets it from --rom lineage|crdroid):
+#   lineage16 (default)  LineageOS 23.2; manifest = ./default.xml (SHA-pinned)
+#   crdroid16            crDroid 12.x on Android 16; manifest =
+#                        ./crdroid-16/default.xml; crdroid-16/patches/ holds
+#                        per-project replacements for lineage-16/patches/
+#                        (today only Connectivity: crDroid's own fork already
+#                        relaxes the BPF kernel gates). Same device, same
+#                        latent-fix layer, same variants.
+ROM_TARGET=${ROM_TARGET:-lineage16}
+case $ROM_TARGET in
+  lineage16) MANIFEST_FILE=${MANIFEST_FILE:-default.xml}
+             PATCH_OVERLAY=${PATCH_OVERLAY:-}
+             ZIP_PREFIX=lineage- ;;
+  crdroid16) MANIFEST_FILE=${MANIFEST_FILE:-crdroid-16/default.xml}
+             PATCH_OVERLAY=${PATCH_OVERLAY:-$REPOROOT/crdroid-16/patches}
+             ZIP_PREFIX= ;;
+  *) echo "ROM_TARGET must be lineage16 or crdroid16 (got: $ROM_TARGET)" >&2; exit 1 ;;
+esac
+
 # Layout self-check: this script lives in lineage-16/, so the patches are
 # at $HERE/patches and the variants/scripts/latent-fixes dirs are at the
 # repo root, one level up. A wrong assumption here would silently apply
@@ -76,6 +102,14 @@ for _d in "$HERE/patches" \
   }
 done
 unset _d
+if [ "$MANIFEST_URL" = "$REPOROOT" ] && [ ! -f "$REPOROOT/$MANIFEST_FILE" ]; then
+  echo "build.sh layout check failed: manifest $REPOROOT/$MANIFEST_FILE not found (ROM_TARGET=$ROM_TARGET)." >&2
+  exit 1
+fi
+if [ -n "$PATCH_OVERLAY" ] && [ ! -d "$PATCH_OVERLAY" ]; then
+  echo "build.sh layout check failed: patch overlay $PATCH_OVERLAY not found (ROM_TARGET=$ROM_TARGET)." >&2
+  exit 1
+fi
 # Projects patched by the last run, as "<project> <patch blob> <tree>" lines.
 STAMP=$SRC/.repo/doha-patches
 SKIN_THROTTLE_C=${SKIN_THROTTLE_C:-40}
@@ -127,15 +161,20 @@ if [ "${SKIP_SYNC:-0}" != 1 ]; then
         exit 1
       }
     fi
-    if ! git -C "$REPOROOT" diff --quiet HEAD -- default.xml; then
-      echo "default.xml has uncommitted changes; repo would not see them. Commit them first." >&2
+    if ! git -C "$REPOROOT" cat-file -e "HEAD:$MANIFEST_FILE" 2>/dev/null; then
+      echo "$MANIFEST_FILE is not committed on the checked-out branch; repo would not see it." >&2
+      echo "Commit it first (git add -A && git commit), or run doha.sh menu 1 (setup)." >&2
+      exit 1
+    fi
+    if ! git -C "$REPOROOT" diff --quiet HEAD -- "$MANIFEST_FILE"; then
+      echo "$MANIFEST_FILE has uncommitted changes; repo would not see them. Commit them first." >&2
       exit 1
     fi
   fi
   MANIFEST_BRANCH=${MANIFEST_BRANCH:-main}
 
   # Run init every time so a changed MANIFEST_URL or branch takes effect.
-  repo init -u "$MANIFEST_URL" -b "$MANIFEST_BRANCH" -m default.xml --git-lfs -g default,-darwin
+  repo init -u "$MANIFEST_URL" -b "$MANIFEST_BRANCH" -m "$MANIFEST_FILE" --git-lfs -g default,-darwin
 
   # If the kit carries vendored device mirrors (scripts/vendor-mirrors.sh was
   # run once), repoint the 27 device-specific projects at them so this sync
@@ -155,6 +194,14 @@ if [ "${SKIP_SYNC:-0}" != 1 ]; then
   # the previous run's patch. Projects already at their pin aren't touched.
   repo sync -c -j"$SYNC_JOBS" --retry-fetches=5 --force-sync --force-checkout \
     --no-tags --no-clone-bundle
+  if [ "$ROM_TARGET" = crdroid16 ]; then
+    # crDroid's branches move daily and the manifest is not SHA-pinned: record the
+    # exact commit of every project this tree was synced to (keep it with the zip;
+    # crdroid-16/README.md explains how to freeze a tree from it).
+    { repo manifest -r --no-local-manifests -o "$SRC/.repo/doha-crdroid16-pins.xml" ||
+      repo manifest -r -o "$SRC/.repo/doha-crdroid16-pins.xml"; } >/dev/null 2>&1 &&
+      echo "recorded every project's synced commit: $SRC/.repo/doha-crdroid16-pins.xml" || true
+  fi
 fi
 
 # doha.sh sync-only mode: stop after the sync, before patches/build.
@@ -191,12 +238,31 @@ fi
 # (Patches live under lineage-16/ in this repo so a future crdroid-17 tree
 # can carry its own patch set without clashing.)
 PATCHDIR="$HERE/patches"
-mapfile -t projects < <(cd "$PATCHDIR" && find . -name '*.patch' | sed 's|^\./||; s|\.patch$||' | sort)
+# PATCH_OVERLAY (crdroid16): per-project replacements for same-named patches in
+# $PATCHDIR, plus any extra project patches. Empty for lineage16.
+patch_file() {
+  if [ -n "$PATCH_OVERLAY" ] && [ -f "$PATCH_OVERLAY/$1.patch" ]; then
+    echo "$PATCH_OVERLAY/$1.patch"
+  else
+    echo "$PATCHDIR/$1.patch"
+  fi
+}
+mapfile -t projects < <({
+  (cd "$PATCHDIR" && find . -name '*.patch')
+  if [ -n "$PATCH_OVERLAY" ]; then (cd "$PATCH_OVERLAY" && find . -name '*.patch'); fi
+} | sed 's|^\./||; s|\.patch$||' | sort -u)
 [ "${#projects[@]}" -gt 0 ] || {
   echo "No patches found in $PATCHDIR - refusing to build an unpatched ROM." >&2
   exit 1
 }
 echo "${#projects[@]} patch(es) discovered in $PATCHDIR"
+if [ -n "$PATCH_OVERLAY" ]; then
+  n_over=0
+  for proj in "${projects[@]}"; do
+    if [ -f "$PATCH_OVERLAY/$proj.patch" ]; then n_over=$((n_over+1)); fi
+  done
+  echo "overlay $PATCH_OVERLAY replaces $n_over of them (ROM_TARGET=$ROM_TARGET)"
+fi
 declare -A patched
 for proj in "${projects[@]}"; do
   patched[$proj]=1
@@ -218,7 +284,7 @@ done
 # blob is that of the filled-in patch, so changing a setting counts as a
 # changed patch.
 render_patch() {
-  sed "s/@SKIN_THROTTLE_MC@/$((SKIN_THROTTLE_C * 1000))/g" "$PATCHDIR/$1.patch"
+  sed "s/@SKIN_THROTTLE_MC@/$((SKIN_THROTTLE_C * 1000))/g" "$(patch_file "$1")"
 }
 
 for proj in "${projects[@]}"; do
@@ -293,6 +359,9 @@ render_variants_mk() {
     echo
     if [ "$DEBLOAT" != none ]; then
       cat "$HERE/../variants/debloat.mk"
+      if [ "$ROM_TARGET" = crdroid16 ] && [ -f "$HERE/../variants/debloat-crdroid.mk" ]; then
+        cat "$HERE/../variants/debloat-crdroid.mk"
+      fi
       if [ "$DEBLOAT" = aggressive ]; then
         cat "$HERE/../variants/debloat-aggressive.mk"
       fi
@@ -370,12 +439,15 @@ set -eu
 product=$SRC/out/target/product/$DEVICE
 images=$product/obj/PACKAGING/target_files_intermediates/lineage_$DEVICE-target_files/IMAGES
 dest=${ZIP_DIR:-$(dirname "$SRC")/zips}
-name=lineage-$version$VARIANT_SUFFIX
+name=${ZIP_PREFIX}$version$VARIANT_SUFFIX
 mkdir -p "$dest"
 cp "$product/$version.zip" "$dest/$name.zip" 2>/dev/null ||
   cp "$product/$(get_build_var LINEAGE_VERSION).zip" "$dest/$name.zip"
 for img in boot dtbo vbmeta; do
-  cp "$images/$img.img" "$dest/$name-$img.img"
+  # crDroid's bacon deletes target_files_intermediates after packaging, so
+  # fall back to the identical images the build leaves in the product dir.
+  if [ -f "$images/$img.img" ]; then srcimg=$images/$img.img; else srcimg=$product/$img.img; fi
+  cp "$srcimg" "$dest/$name-$img.img"
 done
 (cd "$dest" && sha256sum "$name.zip" "$name"-{boot,dtbo,vbmeta}.img > "$name.sha256sum")
 

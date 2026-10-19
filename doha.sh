@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # doha.sh - THE ultimate interactive script for doha-roms
-# Moto G8 Plus (doha) - Android 16 (LineageOS 23.2) + Android 17 (crDroid)
+# Moto G8 Plus (doha) - Android 16 (LineageOS 23.2 or crDroid 12.x) + Android 17 (crDroid)
 #
 # One entry point. Everything is automated - you never run a patch, a
 # fix layer or a make command manually:
@@ -15,10 +15,12 @@
 # Usage:
 #   bash doha.sh                  interactive menu (the normal way)
 #   bash doha.sh <command>        non-interactive, for power users:
-#     status | env | sync | build16 | kernel | build17 | oneshot
+#     status | env | sync | build16 | buildcr16 | kernel | build17 | oneshot
 #     selftest | flash | dump | cloud | vendor | help
 #   build16 flags: --variant nogapps|gapps --debloat none|safe|aggressive
-#                  --dolby --jobs N --src /path/to/src
+#                  --dolby --jobs N --src /path/to/src --rom lineage|crdroid
+#   buildcr16 = build16 --rom crdroid: crDroid 12.x on Android 16, its own
+#   source tree (default ~/doha/src-crdroid16), same patches + fixes + variants
 #
 # First run: choose menu item 1 (setup). It checks your machine and
 # remembers your paths in .doha.conf. After that: item 6 does everything
@@ -35,6 +37,7 @@ LOGDIR="$REPOROOT/logs"
 BUILD="$REPOROOT/lineage-16/build.sh"
 SELFTEST="$REPOROOT/scripts/selftest-paths.sh"
 DRYTEST="$REPOROOT/scripts/selftest-dryrun.sh"
+CR16TEST="$REPOROOT/scripts/selftest-crdroid16.sh"
 FLASHCHECKS="$REPOROOT/scripts/flash-checks.sh"
 DUMPSCRIPT="$REPOROOT/scripts/debug_device.sh"
 LATENT="$REPOROOT/scripts/apply-latent-fixes.sh"
@@ -43,6 +46,8 @@ LOG=""
 # ---------- defaults (overridden by .doha.conf / flags) ----------------------
 SRC="$HOME/doha/src"
 SRC17="$HOME/doha/src17"
+SRCCR16="$HOME/doha/src-crdroid16"   # crDroid 12.x (Android 16): never share a tree with LineageOS
+ROM_TARGET=lineage16                 # lineage16 | crdroid16 (set by --rom, buildcr16, menu 12)
 ZIP_DIR="$HOME/doha/zips"
 CCACHE_DIR="$HOME/doha/ccache"
 JOBS=$(nproc 2>/dev/null || echo 4)
@@ -52,6 +57,7 @@ DOLBY=0
 DUMPS_DIR="$HOME/doha-dumps"
 
 [ -f "$CONF" ] && . "$CONF"   # remembered settings survive re-runs
+SRC_LINEAGE=$SRC              # the LineageOS tree, kept apart from the crDroid one
 
 # ---------- cosmetics ---------------------------------------------------------
 if [ -t 1 ]; then
@@ -63,6 +69,7 @@ hr() { echo "${C}===============================================================
 say() { echo "${B}$*${N}"; }
 note() { echo "${Y}  note:${N} $*"; }
 die() { echo "${R}doha.sh: $*${N}" >&2; exit 1; }
+rom_label() { case "$ROM_TARGET" in crdroid16) echo "crDroid 12.x" ;; *) echo "LineageOS 23.2" ;; esac; }
 
 # ---------- logging -----------------------------------------------------------
 log_init() {
@@ -114,8 +121,10 @@ choose() {  # choose <varname> <title> "value1|description1" "value2|..."
   printf -v "$__var" '%s' "${vals[$((sel-1))]}"
 }
 save_conf() {
+  local lsrc=$SRC crsrc=$SRCCR16
+  if [ "$ROM_TARGET" = crdroid16 ]; then lsrc=$SRC_LINEAGE; crsrc=$SRC; fi
   {
-    echo "SRC=$SRC"; echo "SRC17=$SRC17"; echo "ZIP_DIR=$ZIP_DIR"
+    echo "SRC=$lsrc"; echo "SRC17=$SRC17"; echo "SRCCR16=$crsrc"; echo "ZIP_DIR=$ZIP_DIR"
     echo "CCACHE_DIR=$CCACHE_DIR"; echo "JOBS=$JOBS"
     echo "VARIANT=$VARIANT"; echo "DEBLOAT=$DEBLOAT"; echo "DOLBY=$DOLBY"
     echo "DUMPS_DIR=$DUMPS_DIR"
@@ -126,7 +135,14 @@ save_conf() {
 # ---------- status ------------------------------------------------------------
 git_ok() { git -C "$REPOROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
 manifest_committed() {
-  git -C "$REPOROOT" diff --quiet HEAD -- default.xml >/dev/null 2>&1
+  # both manifests build.sh can init from must be in HEAD and unmodified
+  local f
+  for f in default.xml crdroid-16/default.xml; do
+    [ -f "$REPOROOT/$f" ] || continue
+    git -C "$REPOROOT" cat-file -e "HEAD:$f" >/dev/null 2>&1 || return 1
+    git -C "$REPOROOT" diff --quiet HEAD -- "$f" >/dev/null 2>&1 || return 1
+  done
+  return 0
 }
 action_status() {
   hr; say "doha-roms status"; hr
@@ -137,6 +153,7 @@ action_status() {
   [ -d "$ZIP_DIR" ] && zips=$(find "$ZIP_DIR" -name '*.zip' 2>/dev/null | wc -l)
   echo "  source (A16)     : $SRC - synced: $synced"
   echo "  source (A17)     : $SRC17 - $([ -d "$SRC17/.repo" ] && echo synced || echo not synced)"
+  echo "  source (crDroid16): $SRCCR16 - $([ -d "$SRCCR16/.repo" ] && echo synced || echo not synced)"
   echo "  patches applied  : $stamps of 17 (0 = fresh tree; build applies them)"
   echo "  zips built       : $zips in $ZIP_DIR"
   echo "  ccache           : $([ -d "$CCACHE_DIR" ] && du -sh "$CCACHE_DIR" 2>/dev/null | cut -f1 || echo none)"
@@ -179,8 +196,8 @@ action_env() {
   echo; echo "repo state:"
   if git_ok; then
     echo "  ${G}OK${N}    git repository"
-    if manifest_committed; then echo "  ${G}OK${N}    default.xml committed"
-    else echo "  ${R}MISS${N}  default.xml has uncommitted changes (build.sh refuses to run)"; problems=$((problems+1)); fi
+    if manifest_committed; then echo "  ${G}OK${N}    manifests committed (default.xml, crdroid-16/default.xml)"
+    else echo "  ${R}MISS${N}  default.xml / crdroid-16/default.xml not committed or modified (build.sh refuses to run)"; problems=$((problems+1)); fi
   else
     echo "  ${R}MISS${N}  not a git repository - repo init needs this"; problems=$((problems+1))
   fi
@@ -219,13 +236,13 @@ EOF
 action_sync() {
   log_init sync
   mkdir -p "$SRC" "$ZIP_DIR" "$CCACHE_DIR"
-  hr; say "Syncing the Android 16 source tree (patches apply later, at build time)"
+  hr; say "Syncing the Android 16 source tree - $(rom_label) (patches apply later, at build time)"
   echo "  target: $SRC"
   echo "  first sync: ~150-200 GB, 1-2 h. Interrupted? just run it again - it resumes."
   echo "  device repos: $([ -s "$REPOROOT/mirrors/MIRRORS.tsv" ] && echo "from LOCAL vendored mirror (offline-safe)" || echo "from upstream GitHub (run menu 11 once to vendor them locally)")"
   hr
   if confirm "Start sync now?"; then
-    if run_logged "repo sync" env STOP_AFTER_SYNC=1 ZIP_DIR="$ZIP_DIR" \
+    if run_logged "repo sync" env STOP_AFTER_SYNC=1 ROM_TARGET="$ROM_TARGET" ZIP_DIR="$ZIP_DIR" \
         CCACHE_DIR="$CCACHE_DIR" CCACHE_SIZE="${CCACHE_SIZE:-50G}" \
         bash "$BUILD" "$SRC"; then
       say "Sync done. Build any time with menu 3."
@@ -239,7 +256,13 @@ action_sync() {
 action_build16() {
   log_init build16
   mkdir -p "$ZIP_DIR" "$CCACHE_DIR"
-  hr; say "BUILD: Android 16 / LineageOS 23.2 (the proven target)"; hr
+  hr
+  if [ "$ROM_TARGET" = crdroid16 ]; then
+    say "BUILD: Android 16 / crDroid 12.x (second ROM base - NOT yet built or flashed)"
+  else
+    say "BUILD: Android 16 / LineageOS 23.2 (the proven target)"
+  fi
+  hr
   cat <<'EOF'
   How it works - NOTHING is manual:
     1. repo sync (incremental, skipped if fresh, resumable)
@@ -249,6 +272,12 @@ action_build16() {
     4. the variant layer renders (gapps/debloat/dolby)
     5. mka bacon builds; zips land in your zips dir
 EOF
+  if [ "$ROM_TARGET" = crdroid16 ]; then
+    echo "  crDroid notes: its own source tree (below, ~150 GB more disk); 16 of the 17"
+    echo "  patches apply as-is and Connectivity uses the crDroid variant"
+    echo "  (crdroid-16/patches). Keep your LineageOS zip as the fallback."
+    echo "  Details: crdroid-16/README.md"
+  fi
   echo
   choose VARIANT "ROM edition:" \
     "nogapps|Pure AOSP apps, no Google code (default, safest)" \
@@ -272,8 +301,8 @@ EOF
   echo "  ccache      : $CCACHE_DIR (warm cache = much faster rebuilds)"
   hr
   confirm "Start the build now?" || { echo "aborted."; return 0; }
-  if run_logged "build Android 16 (VARIANT=$VARIANT DEBLOAT=$DEBLOAT DOLBY=$DOLBY)" \
-      env VARIANT="$VARIANT" DEBLOAT="$DEBLOAT" DOLBY="$DOLBY" JOBS="$JOBS" \
+  if run_logged "build Android 16 / $(rom_label) (VARIANT=$VARIANT DEBLOAT=$DEBLOAT DOLBY=$DOLBY)" \
+      env ROM_TARGET="$ROM_TARGET" VARIANT="$VARIANT" DEBLOAT="$DEBLOAT" DOLBY="$DOLBY" JOBS="$JOBS" \
       ZIP_DIR="$ZIP_DIR" CCACHE_DIR="$CCACHE_DIR" \
       CCACHE_SIZE="${CCACHE_SIZE:-50G}" bash "$BUILD" "$SRC"; then
     save_conf
@@ -287,6 +316,15 @@ EOF
   else
     die "build failed - see $LOG (and logs/ for the full history)"
   fi
+}
+
+# ---------- 12) Android 16 on crDroid 12.x (second ROM base) -------------------
+action_buildcr16() {
+  local prev_rom=$ROM_TARGET prev_src=$SRC
+  ROM_TARGET=crdroid16
+  [ "${SRC_GIVEN:-0}" = 1 ] || SRC=$SRCCR16
+  action_build16
+  ROM_TARGET=$prev_rom; SRC=$prev_src
 }
 
 # ---------- 4) kernel only ----------------------------------------------------
@@ -409,12 +447,18 @@ action_oneshot() {
 # ---------- 7) selftest --------------------------------------------------------
 action_selftest() {
   log_init selftest
-  hr; say "Self-tests: (1) build.sh path regression  (2) full dry-run battery"; hr
+  hr; say "Self-tests: (1) build.sh path regression  (2) crDroid 16 target  (3) full dry-run battery"; hr
   local rc=0
   if [ -x "$SELFTEST" ]; then
     run_logged "build.sh path regression self-test" bash "$SELFTEST" || rc=1
   else
     echo "missing $SELFTEST" >&2; rc=1
+  fi
+  echo
+  if [ -x "$CR16TEST" ]; then
+    run_logged "crDroid 16 target self-test (manifest + overlay + mock build)" bash "$CR16TEST" || rc=1
+  else
+    echo "missing $CR16TEST" >&2; rc=1
   fi
   echo
   if [ -x "$DRYTEST" ]; then
@@ -586,6 +630,7 @@ menu() {
     echo "   9) Debug dump (full device diagnostics)"
     echo "  10) Cloud build info (Colab / Crave / GDrive)"
     echo "  11) Vendor device repos into the kit (offline-proof, one-time)"
+    echo "  12) BUILD: Android 16 crDroid 12.x (second ROM, same fixes, own source tree)"
     echo "   0) Exit"
     echo
     printf 'doha> '
@@ -602,6 +647,7 @@ menu() {
       9) action_dump ;;
       10) action_cloud ;;
       11) action_vendor ;;
+      12) action_buildcr16 ;;
       0|q|Q|exit) break ;;
       *) echo "unknown option: $sel" ;;
     esac
@@ -626,20 +672,27 @@ while [ $# -gt 0 ]; do
     --debloat) DEBLOAT=$2; shift 2 ;;
     --dolby)   DOLBY=1; shift ;;
     --jobs)    JOBS=$2; shift 2 ;;
-    --src)     SRC=$2; shift 2 ;;
+    --src)     SRC=$2; SRC_GIVEN=1; shift 2 ;;
+    --rom)     case "${2:-}" in
+                 lineage|lineage16) ROM_TARGET=lineage16 ;;
+                 crdroid|crdroid16) ROM_TARGET=crdroid16 ;;
+                 *) echo "unknown --rom '${2:-}' (use lineage or crdroid)" >&2; exit 1 ;;
+               esac; shift 2 ;;
     *) echo "unknown flag: $1" >&2; exit 1 ;;
   esac
 done
+[ "$CMD" = buildcr16 ] && ROM_TARGET=crdroid16
+if [ "$ROM_TARGET" = crdroid16 ] && [ "${SRC_GIVEN:-0}" != 1 ]; then SRC=$SRCCR16; fi
 case "$CMD" in
   menu)   menu ;;
   status) action_status ;;
   env)    action_env ;;
   sync)   action_sync ;;
-  build16)
-    log_init build16
+  build16|buildcr16)
+    log_init "$CMD"
     mkdir -p "$ZIP_DIR" "$CCACHE_DIR"
-    run_logged "build Android 16 (VARIANT=$VARIANT DEBLOAT=$DEBLOAT DOLBY=$DOLBY)" \
-      env VARIANT="$VARIANT" DEBLOAT="$DEBLOAT" DOLBY="$DOLBY" JOBS="$JOBS" \
+    run_logged "build Android 16 / $(rom_label) (VARIANT=$VARIANT DEBLOAT=$DEBLOAT DOLBY=$DOLBY)" \
+      env ROM_TARGET="$ROM_TARGET" VARIANT="$VARIANT" DEBLOAT="$DEBLOAT" DOLBY="$DOLBY" JOBS="$JOBS" \
       ZIP_DIR="$ZIP_DIR" CCACHE_DIR="$CCACHE_DIR" \
       CCACHE_SIZE="${CCACHE_SIZE:-50G}" bash "$BUILD" "$SRC" \
       || die "build failed - see $LOG"

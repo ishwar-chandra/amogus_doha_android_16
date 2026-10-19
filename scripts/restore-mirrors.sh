@@ -28,7 +28,13 @@ LMP="$SRC/.repo/local_manifests"
 [ -f "$LIST" ] || { echo "restore-mirrors: no $LIST - run scripts/vendor-mirrors.sh first"; exit 1; }
 [ -d "$SRC/.repo" ] || { echo "restore-mirrors: $SRC is not a repo-initialized tree (no .repo)"; echo "run the sync/build first, or: cd $SRC && repo init -u <kit> -m default.xml"; exit 1; }
 
-mkdir -p "$GITDIR" "$LMP"
+if ! mkdir -p "$GITDIR" "$LMP" 2>/dev/null || [ ! -w "$GITDIR" ]; then
+  # e.g. the kit bind-mounted read-only into Docker: without this guard the
+  # script "succeeded" with 0 mirrors and pointed repo sync at folders that
+  # do not exist. build.sh treats a failure here as "sync from upstream".
+  echo "restore-mirrors: cannot write $GITDIR (kit mounted read-only?) - mirrors NOT restored; sync falls back to upstream" >&2
+  exit 1
+fi
 n=0
 while IFS='|' read -r name path remote rev date url size; do
   case "$name" in \#*|"") continue ;; esac
