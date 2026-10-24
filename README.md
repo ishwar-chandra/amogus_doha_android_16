@@ -60,7 +60,7 @@ doha-roms/
 ├── WORKLOG.md               COMPLETE project history & context (read this first!)
 ├── lineage-16/              ⭐ the proven target: LineageOS 23.2 + fixes
 │   ├── build.sh             sync + patch + latent-fixes + variants + build
-│   └── patches/             17 patches (16 carried from base + touch fix extended)
+│   └── patches/             17 patches (the base recipe's set, touch patch extended)
 ├── latent-fixes/            the 2026-10 latent-bug fix layer
 │   ├── doha_amogus_fixes.te        sepolicy B1-B5 (sensor mount, HALs, modprobe)
 │   ├── doha_qcom_fixes.te          sepolicy B6-B10 (rild, vold, fsck, USB OTG)
@@ -95,6 +95,11 @@ doha-roms/
     ├── DOLBY.md             the Dolby integration guide
     └── DEBLOAT.md           editions, removal tiers, the never-remove list
 ```
+
+`scripts/debug_device.sh` uses the bundled `platform-tools/adb.exe` at the
+repository root and saves its default timestamped output under `device dumps/`.
+That directory is gitignored because device diagnostics may contain sensitive
+information.
 
 ## Building (Android 16, the proven target)
 

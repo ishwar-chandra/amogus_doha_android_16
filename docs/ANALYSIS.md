@@ -44,41 +44,86 @@ touch drivers as well, matching what the working ROMs load. The kernel
 builds all three; the ones that don't match this panel simply don't bind.
 Verify after flashing: `scripts/flash-checks.sh` section 1.
 
-## 2. SIM 1 calls — root cause FOUND (modem carrier config fails on slot 0)
+## 2. SIM 1 calls — root cause PROVEN (slot 0 never gets an MCFG)
 
 SIMs: **SIM 1 = Vi India** (mcc 404 / mnc 15, carrierId 2378, ICCID 89910…),
 **SIM 2 = Jio** (405/871, carrierId 2018). User symptom: VoLTE works, data +
-signal on both SIMs, SIM 2 calls fine, **SIM 1 outgoing calls fail**.
+signal on both SIMs, SIM 2 calls fine, **SIM 1 outgoing calls fail**. The
+same defect was reported on crDroid 13 with the Jio card in SIM 1; the
+2026-10-24 crDroid 13 dump confirms the mechanism.
 
-| Evidence | stock 10 (calls work) | crDroid 13 (calls work) | lineage16 (calls fail) |
+| Evidence | stock 10 (calls work) | crDroid 13 | lineage16 |
 |---|---|---|---|
-| `persist.vendor.radio.mcfg_version` | `VODAFONE_IND_VOLTE,RJIO_IND` | (prop not present, older qcrild) | **`null,RJIO_IND`** |
-| `persist.vendor.radio.mcfg_ver_num` | `0x08010809,0x08011B0C` | — | **`0,0x08011B0C`** |
-| `gsm.network.type` (slot 0, slot 1) | `LTE,LTE` | `LTE,LTE` | **`EDGE,LTE`** |
-| Vi voice/data reg (radio log) | — | `voice=LTE data=LTE IN_SERVICE` | voice=**GSM** HOME, data **OUT_OF_SERVICE** |
-| IMS active sub | — | — | `vendor.ims.activesub=1` (Jio only) |
+| `persist.vendor.radio.mcfg_version` | `VODAFONE_IND_VOLTE,RJIO_IND` | **`null,BSNL_VOLTE`** | **`null,RJIO_IND`** |
+| `persist.vendor.radio.mcfg_ver_num` | `0x08010809,0x08011B0C` | **`0,0x08010809`** | **`0,0x08011B0C`** |
+| `set_ims_service_enable_config` slot 0 | works | **`ril_err: 54, qmi res: 70`** | never sent (feature not READY) |
+| `set_ims_service_enable_config` slot 1 | works | `ril_err: 0, qmi res: 0` | `ril_err: 0, qmi res: 0` |
+| `gsm.network.type` (slot 0, slot 1) | `LTE,LTE` | `LTE,LTE` | `LTE,LTE` |
+| IMS on slot 0 | call dials over IMS (`useImsForCall=true`) | MMTEL `Voice:false` | `isImsRegistered=false`, feature never READY |
 
-Mechanism: **qcrild failed to select a modem carrier configuration (MCFG)
-for slot 0 (Vi)** on the Android 16 build — the prop is literally `null`
-while slot 1 (Jio) matched `RJIO_IND` fine. Without the VODAFONE_IND_VOLTE
-policy, the Vi SIM cannot do LTE/VoLTE properly, falls back to 2G (EDGE),
-and calls on it fail (2G in this circle is patchy; PS data also out of
-service). On stock the same SIM, same slot, same modem firmware selects
-VODAFONE_IND_VOLTE and LTE/LTE. The MCFG database lives in the modem
-partition (untouched by ROM flashes — `mcfg_hw.mbn`/`mcfg_sw.mbn` are
-byte-identical), so this is a **qcrild userspace/selection issue**, not a
-missing-file issue.
+Mechanism, proven by the logs: slot 0 finishes boot with
+`mcfg_version=null` / `mcfg_ver_num=0`. The modem therefore rejects the
+IMS service-enable request for that stack with `QMI_ERR_INVALID_OPERATION`
+(`qmi res: 70`). Slot 1 has a valid MCFG, accepts the request, and Jio
+registers VoLTE. The failure follows the **slot**, not the card: swapping
+Jio into SIM 1 reproduces it, swapping it back to SIM 2 fixes it. Android
+16 additionally never brings the slot-0 `ImsFeature` to READY; Android 13
+brings it to READY but with empty MMTEL capabilities. Both are downstream
+of the same missing MCFG.
 
-Likely mechanism: MCFG selection runs per-slot at SIM detection; on the
-Android 16 boot, slot 0's selection ran before the Vi SIM's PLMN was
-readable (or otherwise failed) and was never retried. Not yet reproduced
-under controlled conditions.
+The MCFG files (`mcfg_hw.mbn`/`mcfg_sw.mbn`) are byte-identical across the
+three dumps, so the data is present; Motorola QCRIL's AP-side SW-MBN
+selector (`qcril_qmi_sw_mbn_select_mbn`, `mot_mbn_set_mcfg_ver`,
+`/data/vendor/modem_config/mcfg_sw/`) is what fails. Stock sets the QCRIL
+inputs in its `vendor.prop`; the hand-written doha `common-prop.mk` omitted
+them, including `persist.vendor.radio.no_wait_for_card=1`, which gates the
+selection path.
 
-**Status: no build-side fix shipped yet** — the fix needs one controlled
-repro (see docs/SIM1-CALLS.md for the 15-minute test matrix; airplane-mode
-toggle or a reboot is the expected workaround and may confirm the theory).
-`scripts/flash-checks.sh` section 3 prints the state so every build now
-logs it.
+**Fix (shipped):** `patches/device/motorola/common.patch` restores the
+stock Motorola QCRIL/IMS props (`no_wait_for_card`, `hidl_dev_service`,
+`aosp_usr_pref_sel`, `enable_temp_dds`, `force_get_pref`, `jbims`,
+`ro.vendor.radio.ims_version`). Same device tree is used by crDroid 13 and
+the Android 17 kit, so the hunk carries to both. `flash-checks.sh` section
+3 now checks each slot separately and fails if either MCFG is null or IMS
+is registered on fewer than 2 slots. If a future boot still shows slot 0
+null, docs/SIM1-CALLS.md documents the qcrild-ordering/retry step.
+
+## 2b. Hotspot — modem SSR from the IPA WDI force-clear path
+
+The 2026-10-24 crDroid 13 dump caught the hotspot bug in the kernel log.
+Every suspend while the WiFi AP was up produced:
+
+```
+ipa3_qmi_enable_force_clear_datapath_send:1313 send Req 37 failed, rc= -110
+ipa3_enable_force_clear:979 ... failed -110
+ipa3_suspend_gsi_wdi_pipe:2819 failed to force clear -110
+ipa3_suspend_gsi_wdi_pipe:2820 remove delay from SCND reg
+ipa3_cfg_ep_ctrl:5034 pipe setting delay is not supported
+modem subsystem failure reason: ipa_hal.c:2393:IPA Assert:
+  ... Received IPA IRQ. IRQ_STTS: 0x01812080 ...
+Fatal error on modem!
+subsys-restart: Restart sequence requested for modem, restart_level = RELATED
+```
+
+The modem restarts, both telephony stacks broadcast `POWER_OFF`, and both
+SIMs drop registration — the "hotspot kills the SIMs" symptom. The WLAN
+firmware dump follows because its root PD is the modem
+(`icnss: PD service down ... Root PD crashed`).
+
+Root cause: IPA v4.2 (trinket) with the stock modem firmware does not
+implement the force-clear QMI request. `ipa3_suspend_gsi_wdi_pipe()`
+sends it anyway; the request times out (`-110`) and the modem asserts on
+the pending IPA IRQ. The same code is in the LineageOS 23.2 kernel pin
+(`6509e92`, same `ipa_uc_wdi.c` line numbers), so the bug carries to
+Android 16 and to the Android 17 kit (same kernel pin).
+
+**Fix (shipped):** the kernel patch skips the force-clear request when
+`ipa_hw_type == IPA_HW_v4_2` and takes the existing failure path (clear
+the endpoint delay, stop the GSI channel). No request, no modem IRQ
+storm. Wi-Fi station mode keeps IPA offload; only the WDI suspend path
+changes. Verify by enabling the hotspot, letting the screen sleep, then
+checking that `dmesg` has no `Fatal error on modem` and both SIMs stay
+registered.
 
 ## 3. CPU governor pinned to performance — new bug found
 

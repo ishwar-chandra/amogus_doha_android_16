@@ -4,6 +4,7 @@
 # =============================================================================
 # Run this from your PC with the device connected via ADB.
 # Usage: ./debug_device.sh [output_dir]
+# Default output: <repo_root>/device dumps/device_dump_<timestamp>/
 #
 # Options (environment variables):
 #   TMO=90          per-command timeout in seconds (a stuck sysfs read can no longer hang the run)
@@ -32,21 +33,29 @@ set -u   # no -e on purpose: one failing grep/command must never end a diagnosti
 # Setup
 # ---------------------------------------------------------------------------
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTDIR="${1:-./device_dump_${TIMESTAMP}}"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
+OUTDIR="${1:-$REPO_ROOT/device dumps/device_dump_${TIMESTAMP}}"
 TMO=${TMO:-90}; LIGHT=${LIGHT:-0}; REPRO_SIM1=${REPRO_SIM1:-0}; REPRO_WAIT=${REPRO_WAIT:-30}; REDACT=${REDACT:-1}
 ALL_SERVICES=${ALL_SERVICES:-1}; GUIDED=${GUIDED:-0}; GUIDED_ONLY=${GUIDED_ONLY:-}; BUGREPORT=${BUGREPORT:-0}; HASH_VENDOR=${HASH_VENDOR:-0}; ANALYZE=${ANALYZE:-1}
 HAVE_TIMEOUT=0; command -v timeout >/dev/null 2>&1 && HAVE_TIMEOUT=1
 
 # Prefer the adb bundled alongside this script, then fall back to PATH.
 # (Resolved BEFORE creating OUTDIR so a missing adb leaves no stray dir.)
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-ADB_BIN="$SCRIPT_DIR/platform-tools/adb.exe"
+ADB_BIN="$REPO_ROOT/platform-tools/adb.exe"
 if [ ! -f "$ADB_BIN" ]; then
   ADB_BIN=$(command -v adb 2>/dev/null) || {
     echo "ERROR: adb not found in PATH" >&2; exit 1
   }
 fi
 adb() { "$ADB_BIN" "$@"; }
+
+# Same rule for a present-but-idle adb: without a device every probe below is
+# empty, so refuse before creating OUTDIR instead of leaving a useless dump.
+if [ "$(adb get-state 2>/dev/null || echo none)" != device ]; then
+  echo "ERROR: no device connected - connect the phone (adb devices)" >&2
+  exit 1
+fi
 
 mkdir -p "$OUTDIR"
 

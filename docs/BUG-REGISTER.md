@@ -1,11 +1,10 @@
 # doha-roms BUG REGISTER
 
 Every defect found in the 2026-09-26 LineageOS 23.2 (Android 16) build for
-Moto G8 Plus (doha), from the full triage of three device dumps taken
-2026-10-15 (stock Android 10, crDroid 9.20 / Android 13, LineageOS 23.2).
-Only the lineage16 dump was taken with root, so kernel-level evidence
-(dmesg, tombstones) is lineage16-only; userspace evidence is compared
-across all three ROMs.
+Moto G8 Plus (doha), from the full triage of three device dumps: stock
+Android 10 and LineageOS 23.2 (2026-10-15), and crDroid 9.20 / Android 13
+(2026-10-24). The crDroid and lineage16 dumps include kernel logs, so the
+modem/IPA evidence below is compared across ROMs.
 
 Fix status key:
 - **FIXED** - a patch/step in this repo fixes it
@@ -19,7 +18,7 @@ Severity = user-visible impact if left alone.
 | # | Bug | Severity | Status |
 |---|-----|----------|--------|
 | 1 | Touch dead at boot | critical | FIXED |
-| 2 | SIM 1 calls fail | critical | PARTIAL |
+| 2 | SIM 1 calls/VoLTE fail (slot 0 MCFG missing) | critical | FIXED (build-side, flash-pending) |
 | 3 | CPU governor pinned to performance | high | FIXED (twice over) |
 | 4 | Dolby Atmos absent | feature | FIXED (integration path) |
 | 5 | Thermal HAL sensor name mismatch | high | FIXED |
@@ -48,6 +47,7 @@ Severity = user-visible impact if left alone.
 | 28 | Orientation sensors missing vs crDroid 13 | low | FIXED (via #7) |
 | 29 | RIL IMS bearer only on slot 1 | info | PARTIAL (see #2) |
 | 30 | Crashed-system-check gaps (dropbox empty) | info | NO-OP |
+| 31 | Hotspot suspend crashes the modem (IPA force-clear assert) | critical | FIXED (kernel, flash-pending) |
 
 Details below. Every FIXED item has a verify step in
 `scripts/flash-checks.sh`.
@@ -63,23 +63,36 @@ lineage16; Himax built-in driver probes and finds nothing).
 Fix: `patches/device/motorola/amogus_doha.patch` adds the three touch
 drivers to `BOARD_VENDOR_KERNEL_MODULES_LOAD`. No kernel rebuild needed.
 
-## #2 SIM 1 (Vi) calls fail - PARTIAL
+## #2 SIM 1 (slot 0) calls / VoLTE fail - FIXED (build-side, flash-pending)
 
-Evidence: `persist.vendor.radio.mcfg_version` = `null,RJIO_IND` on
-lineage16 (stock: `VODAFONE_IND_VOLTE,RJIO_IND`); `gsm.network.type` =
-`EDGE,LTE` (slot 0 fell back to 2G); IMS bearer exists only for phoneId 1
-(telephony/ims_status.txt: single `ApnSetting IMS ... 405871` = Jio);
-Vi voice registers on GSM and PS data is OUT_OF_SERVICE (radio log).
-Root cause: qcrild's per-slot MCFG selection fails for slot 0 (Vi) on the
-Android 16 boot. The modem-side MCFG database is identical across ROMs.
-New evidence this session: two Android-16-tree-specific failures land in
-the same boot window and are now FIXED - see #10 (rild denied
-/mnt/vendor, the gateway to persist EFS files) and #20
-(`ril.subscription.types` never set). Either or both may be the missing
-piece for reliable slot-0 provisioning.
-Test: flash the new build, then run the docs/SIM1-CALLS.md matrix. If
-SIM 1 still fails, capture `adb logcat -b radio` during a boot +
-airplane-mode toggle.
+Evidence (2026-10-24, three dumps compared):
+- stock 10: `mcfg_version=VODAFONE_IND_VOLTE,RJIO_IND`,
+  `mcfg_ver_num=0x08010809,0x08011B0C`; slot 0 dials over IMS
+  (`useImsForCall=true`, `isVolteEnabled()=true`).
+- crDroid 13: `mcfg_version=null,BSNL_VOLTE`, `mcfg_ver_num=0,...`.
+  RIL[0] `set_ims_service_enable_config` returns
+  `ril_err: 54, qmi res: 70` (QMI_ERR_INVALID_OPERATION); RIL[1] returns
+  `ril_err: 0, qmi res: 0`. Slot 0 MMTEL capabilities are all false.
+- LineageOS 23.2: `mcfg_version=null,RJIO_IND`, `mcfg_ver_num=0,...`.
+  Slot-0 IMS feature never reaches READY; phone 0 stays
+  `isImsRegistered=false` while phone 1 (Jio) registers LTE IMS.
+
+Root cause: slot 0 finishes boot without an MCFG, so the modem refuses
+to enable IMS on that stack. Motorola QCRIL performs the per-stack
+SW-MBN/MCFG selection from `/data/vendor/modem_config/mcfg_sw/` and
+needs the stock QCRIL props. The hand-written doha `common-prop.mk` was
+missing them. Fix: `patches/device/motorola/common.patch` now adds the
+stock Motorola values (`no_wait_for_card=1`, `hidl_dev_service=1`,
+`aosp_usr_pref_sel=true`, `enable_temp_dds=true`, `force_get_pref=1`,
+`jbims=1`, `ro.vendor.radio.ims_version`). This is the same device tree
+used by the crDroid 13 and Android 17 builds, so it carries to both.
+
+Test: flash and run `flash-checks.sh` section 3. It now parses each slot
+separately and fails if either MCFG is null; the IMS registration count
+from `dumpsys phone` is printed as a secondary signal. If slot 0 is
+still null, capture `adb logcat -b radio` during boot + a SIM-1 call; the
+next step is a qcrild-ordering or delayed re-selection service
+(docs/SIM1-CALLS.md).
 
 ## #3 CPU governor pinned to performance - FIXED (true cause found)
 
@@ -377,6 +390,46 @@ with #2's mcfg failure. Re-test after #10/#20 fixes.
 /data/system/dropbox has no entries on lineage16 (empty dir listing) -
 the crash reporter works (tombstones exist, dropbox entries expire by
 retention). Not a defect.
+
+## #31 Hotspot suspend crashes the modem (IPA force-clear assert) - FIXED (kernel, flash-pending)
+
+Evidence from the 2026-10-24 crDroid 13 dump (kernel log, repeated on
+every suspend cycle while the WiFi AP was up):
+
+```
+ipa3_qmi_enable_force_clear_datapath_send:1313 send Req 37 failed, rc= -110
+ipa3_enable_force_clear:979 ... failed -110
+ipa3_suspend_gsi_wdi_pipe:2819 failed to force clear -110
+ipa3_suspend_gsi_wdi_pipe:2820 remove delay from SCND reg
+ipa3_cfg_ep_ctrl:5034 pipe setting delay is not supported
+modem subsystem failure reason: ipa_hal.c:2393:IPA Assert:
+  ... failed: Received IPA IRQ. IRQ_STTS: 0x01812080 ...
+Fatal error on modem!
+subsys-restart: Restart sequence requested for modem, restart_level = RELATED
+```
+
+Consequence: modem SSR, then both telephony stacks broadcast
+`POWER_OFF` and drop registration (the user sees the hotspot kill the
+SIMs). The WLAN firmware ramdump follows because its root PD is the
+modem (`icnss: PD service down ... Root PD crashed`).
+
+Root cause: IPA v4.2 (trinket) + the stock modem firmware does not
+implement the force-clear QMI request. The request times out and the
+modem asserts on the pending IPA IRQ. The same path exists in the
+LineageOS 23.2 kernel (pin `6509e92`, same `ipa_uc_wdi.c` line numbers),
+so the bug carries unchanged to Android 16 and to the Android 17 kit
+(same kernel pin in `crdroid-17/local_manifest_doha.xml`).
+
+Fix: `patches/kernel/motorola/msm-4.14.patch` skips the force-clear
+request on `IPA_HW_v4_2` and takes the already-existing failure path
+(remove the endpoint delay, then stop the GSI channel). No QMI request,
+no modem IRQ storm. Wi-Fi station mode keeps IPA offload; only the
+WDI suspend path changes.
+
+Test: flash boot.img, enable the hotspot, let the screen sleep, then
+`adb shell dmesg | grep -E 'Fatal error on modem|force clear'` must be
+empty and both SIMs must stay registered. This is an Android 16/17
+kernel patch; the crDroid 13 build needs the same hunk re-targeted.
 
 ---
 

@@ -64,3 +64,30 @@ index fbb2b3c..177abc3 100644
      <hal format="hidl">
          <name>vendor.qti.hardware.radio.am</name>
          <transport>hwbinder</transport>
+
+diff --git a/common-prop.mk b/common-prop.mk
+index b3919a8b4c6d8c01a3b16e7516563e26f8e6ae07..b1964ff4421fb377ffe276def3669ea2baf700c1 100644
+--- a/common-prop.mk
++++ b/common-prop.mk
+@@ -189,6 +189,21 @@
+     persist.vendor.radio.oem_socket=true \
+     persist.vendor.radio.msgtunnel.start=true
+ 
++## Modem carrier-config (MCFG) selection
++# Stock Motorola values. QCRIL's SW-MBN selector reads these while the
++# modem stacks come up. Without them stack 0 can finish boot with
++# persist.vendor.radio.mcfg_version=null; the modem then rejects
++# SET_IMS_SERVICE_ENABLE_CONFIG for that stack with
++# QMI_ERR_INVALID_OPERATION and VoLTE never registers on SIM 1.
++PRODUCT_PROPERTY_OVERRIDES += \
++    persist.vendor.radio.no_wait_for_card=1 \
++    persist.vendor.radio.hidl_dev_service=1 \
++    persist.vendor.radio.aosp_usr_pref_sel=true \
++    persist.vendor.radio.enable_temp_dds=true \
++    persist.vendor.radio.force_get_pref=1 \
++    persist.vendor.radio.jbims=1 \
++    ro.vendor.radio.ims_version=AT4.3.1_IR92_V11.0
++
+ ## Platform specific default properties
+ PRODUCT_PROPERTY_OVERRIDES += \
+     persist.data.qmi.adb_logmask=0

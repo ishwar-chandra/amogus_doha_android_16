@@ -1,5 +1,55 @@
 # SIM 1 calls: diagnosis and the 15-minute confirmation test
 
+## UPDATE (2026-10-24): root cause narrowed to slot 0's missing MCFG
+
+Three dumps compared (stock 10, crDroid 13, LineageOS 23.2) and the
+slot-0 failure is now directly logged, not inferred:
+
+| Evidence | stock 10 | crDroid 13 | LineageOS 23.2 |
+|---|---|---|---|
+| `mcfg_version` slot 0 / slot 1 | `VODAFONE_IND_VOLTE,RJIO_IND` | `null,BSNL_VOLTE` | `null,RJIO_IND` |
+| `mcfg_ver_num` slot 0 / slot 1 | `0x08010809,0x08011B0C` | `0,0x08010809` | `0,0x08011B0C` |
+| `set_ims_service_enable_config` slot 0 | works | **`ril_err: 54, qmi res: 70`** | never sent (feature not READY) |
+| `set_ims_service_enable_config` slot 1 | works | `ril_err: 0, qmi res: 0` | `ril_err: 0, qmi res: 0` |
+| IMS on slot 0 | call dials over IMS (`useImsForCall=true`, `isVolteEnabled()=true`) | MMTEL capabilities `Voice:false` | feature never READY, `isImsRegistered=false` |
+| IMS on slot 1 | works | Jio registers | Jio registers |
+
+`qmi res: 70` is `QMI_ERR_INVALID_OPERATION`. In other words: slot 0
+finishes boot without an MCFG, and the modem then **rejects the IMS
+service-enable request for that stack**. The AP-side IMS app is fine; the
+modem never enables VoLTE on slot 0. That is why the failure follows the
+slot, not the card: swapping Jio into SIM 1 reproduces it, swapping it
+back to SIM 2 fixes it.
+
+Why slot 0: Motorola's QCRIL has an AP-side SW-MBN/MCFG selector
+(`qcril_qmi_sw_mbn_select_mbn`, `mot_mbn_set_mcfg_ver`,
+`/data/vendor/modem_config/mcfg_sw/`). Stock sets the QCRIL inputs in
+`vendor.prop`; the hand-written doha `common-prop.mk` omitted them. The
+one directly on this path is `persist.vendor.radio.no_wait_for_card=1`.
+The fix shipped in `lineage-16/patches/device/motorola/common.patch`
+restores the stock Motorola values:
+
+```
+persist.vendor.radio.no_wait_for_card=1
+persist.vendor.radio.hidl_dev_service=1
+persist.vendor.radio.aosp_usr_pref_sel=true
+persist.vendor.radio.enable_temp_dds=true
+persist.vendor.radio.force_get_pref=1
+persist.vendor.radio.jbims=1
+ro.vendor.radio.ims_version=AT4.3.1_IR92_V11.0
+```
+
+**Flash-test required.** The correlation is proven; the prop fix is the
+stock configuration, not a blind guess. On the first boot after flashing,
+`flash-checks.sh` section 3 must print a non-null MCFG for BOTH slots
+(and will show the `dumpsys phone` IMS count as a secondary signal). If
+slot 0 is still null, capture `adb logcat -b radio` during boot and
+place a SIM-1 call; the next step is the qcrild-ordering/retry service
+described below.
+
+The hotspot/modem-SSR bug found in the same crDroid 13 dump is a separate
+kernel defect; see `docs/BUG-REGISTER.md` #31.
+
 ## UPDATE (2026-10-17 triage): two build-side fixes now shipped for this
 
 The deep dump triage found two Android-16-tree-specific failures that
@@ -37,7 +87,10 @@ bearer (phoneId 1 / Jio, with P-CSCF addresses) and nothing for phoneId
   sub (`vendor.ims.activesub=1`), and Vi calls fail.
 - On stock Android 10 (same phone, same SIMs, same slot order, same modem
   firmware): `VODAFONE_IND_VOLTE,RJIO_IND`, both slots on LTE, calls work.
-- On crDroid 13: `LTE,LTE`, voice=LTE IN_SERVICE, calls work.
+- On crDroid 13: `LTE,LTE`, but slot 0 (BSNL in the 2026-10-24 dump)
+  still has `mcfg_version=null` and the modem rejects its IMS enable
+  request (`qmi res: 70`); only slot 1 (Jio) registers IMS. This is the
+  same defect, not a working reference ROM.
 
 The MCFG database is inside the modem partition (`mcfg_hw.mbn`,
 `mcfg_sw.mbn` — identical across the dumps). ROM flashes never touch it.

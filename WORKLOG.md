@@ -649,3 +649,81 @@ line shows both; `.selftest-dryrun/` gitignored.
 repo sync of 1,157 platform projects, Soong compile, phone flash/dump
 paths, and the actual Colab session — those need the build machine,
 the phone, and a Colab runtime respectively.
+
+---
+
+## Session 9 (2026-10-24) — restore the missing 17th patch, offline-proof the battery
+
+**Found while writing `AGENTS.md`:** `lineage-16/patches/` held 16
+files although README/doha.sh/WORKLOG and `selftest-paths.sh` all
+expect 17. The base recipe
+(`christiaan/lineage-23-amogus_doha`) carries
+`patches/device/lineage/sepolicy.patch`; this kit never copied it.
+`crdroid-17/patches/README.md` already listed that row.
+
+**Fix:** restored `lineage-16/patches/device/lineage/sepolicy.patch`
+(721 bytes, sha256 `3f50732c...`), byte-identical to the base file.
+`.gitignore` also had to be fixed: its unanchored `lineage/` pattern
+matched `device/lineage/`, so the restored patch would never have been
+committed. Anchored the build-dir ignore to `/lineage/`.
+Verified with `git apply --check` against the pinned
+`LineageOS/android_device_lineage_sepolicy` revision
+`0a9e75292f0ed1a83c31a311b1b32367a9faff75`: applies cleanly, removes
+the `sched_energy_aware` genfscon. `selftest-paths.sh` now discovers
+17 patches and passes **15/15**.
+
+**Second issue: the dry-run battery used the network.** S6's
+"vendor resume no-op" assertion ran `doha.sh vendor` even when
+tarballs were missing; on this delivery copy (23/27) it really fetched
+the kernel repo from GitHub until the 180 s test timeout. Two runs
+left 53 MB + 73 MB partial fetches. **Fix:** skip that assertion
+unless all 27 tarballs exist, with an explicit skip message. Verified:
+the full battery now reports 84 passed / 14 failed and
+`mirrors/vendor.log` mtime is unchanged (no vendor run, no network).
+The 14 remaining failures are host/asset issues: 6 need a working
+`python3`, 5 need the 4 intentionally omitted big tarballs, 1 is
+Cygwin path normalization, 2 are the bundled `platform-tools/adb.exe`
+defeating the adb-less checks.
+
+---
+
+## Session 10 (2026-10-24) — SIM-1 VoLTE root cause + hotspot modem SSR
+
+**Inputs:** the 2026-10-24 crDroid 13 dump (new), the 2026-10-15
+LineageOS 23.2 dump, and the 2026-10-15 stock Android 10 dump. Kernel
+logs are present in the crDroid and lineage dumps; this is the first
+session where the modem/IPA failure is visible in both directions.
+
+**SIM-1 (slot 0) VoLTE — proven.** The failing slot always has
+`persist.vendor.radio.mcfg_version=null` and `mcfg_ver_num=0`:
+- stock: `VODAFONE_IND_VOLTE,RJIO_IND` / `0x08010809,0x08011B0C`;
+  phone 0 dials over IMS (`useImsForCall=true`).
+- crDroid 13: `null,BSNL_VOLTE` / `0,0x08010809`; RIL[0]
+  `qcril_qmi_imss_set_ims_service_enable_config_resp_hdlr` returns
+  `ril_err: 54, qmi res: 70` (QMI_ERR_INVALID_OPERATION) while RIL[1]
+  returns `0,0`. Slot-0 MMTEL capabilities stay false.
+- lineage16: `null,RJIO_IND` / `0,0x08011B0C`; slot-0 ImsFeature never
+  reaches READY, phone 0 stays `isImsRegistered=false`.
+
+The failure follows the slot, not the card. Fix shipped in
+`patches/device/motorola/common.patch`: restore the stock Motorola
+QCRIL/MCFG props that the hand-written `common-prop.mk` omitted
+(`no_wait_for_card=1`, `hidl_dev_service=1`, `aosp_usr_pref_sel=true`,
+`enable_temp_dds=true`, `force_get_pref=1`, `jbims=1`,
+`ro.vendor.radio.ims_version`). `flash-checks.sh` §3 now parses each
+slot and checks IMS registration on both. Flash-test still required.
+
+**Hotspot — modem SSR proven.** crDroid 13 kernel log, every suspend
+with the WiFi AP up: `ipa3_suspend_gsi_wdi_pipe:2819 failed to force
+clear -110`, then `ipa_hal.c:2393:IPA Assert ... Received IPA IRQ`,
+`Fatal error on modem!`, modem SSR, both SIMs `POWER_OFF`. Fix shipped
+in `patches/kernel/motorola/msm-4.14.patch`: skip the force-clear QMI
+on `IPA_HW_v4_2` and take the existing failure path. Same kernel pin
+`6509e92` is used by Android 16 and the Android 17 kit, so the hunk
+carries; crdroid-17/patches/README.md now says so explicitly.
+
+**Verification done here:** both hunks `git apply --check` cleanly
+against the pinned trees; `bash -n scripts/flash-checks.sh`; patch
+discovery/selftests still pass. **Not verified:** a real build, a flash,
+or a phone test — Linux-only. The phone test is `flash-checks.sh` §3
+plus a hotspot sleep cycle.

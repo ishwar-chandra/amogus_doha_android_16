@@ -24,3 +24,55 @@ index 3a3b7cd9d9fb..973e163811d5 100644
  }
  
  static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
+diff --git a/drivers/platform/msm/ipa/ipa_v3/ipa_uc_wdi.c b/drivers/platform/msm/ipa/ipa_v3/ipa_uc_wdi.c
+index 4179656da1ee56edd0b1bd05741b87e16738c583..501734fd44a3a8ef449d132cada8685e525a7647 100644
+--- a/drivers/platform/msm/ipa/ipa_v3/ipa_uc_wdi.c
++++ b/drivers/platform/msm/ipa/ipa_v3/ipa_uc_wdi.c
+@@ -2809,21 +2809,37 @@ int ipa3_suspend_gsi_wdi_pipe(u32 clnt_hdl)
+ 		IPADBG("suspended pipe %d\n", ipa_ep_idx);
+ 		source_pipe_bitmask = 1 <<
+ 			ipa3_get_ep_mapping(ep->client);
+-		res = ipa3_enable_force_clear(clnt_hdl,
+-				false, source_pipe_bitmask);
+-		if (res) {
+-			/*
+-			 * assuming here modem SSR, AP can remove
+-			 * the delay in this case
+-			 */
+-			IPAERR("failed to force clear %d\n", res);
+-			IPAERR("remove delay from SCND reg\n");
++		/*
++		 * IPA v4.2 with the stock trinket modem firmware does not
++		 * implement the force-clear QMI request: it times out
++		 * (-ETIMEDOUT) and the modem then asserts on the pending IPA
++		 * IRQ (ipa_hal.c:2393). That restarts the modem and drops
++		 * both SIMs while WiFi AP is suspended. Skip the request and
++		 * take the same path as an already-failed force-clear.
++		 */
++		if (ipa3_ctx->ipa_hw_type == IPA_HW_v4_2) {
++			IPAERR("skip force clear for WDI on IPA v4.2\n");
+ 			ep_ctrl_scnd.endp_delay = false;
+ 			ipahal_write_reg_n_fields(
+ 					IPA_ENDP_INIT_CTRL_SCND_n, clnt_hdl,
+ 					&ep_ctrl_scnd);
+ 		} else {
+-			disable_force_clear = true;
++			res = ipa3_enable_force_clear(clnt_hdl,
++					false, source_pipe_bitmask);
++			if (res) {
++				/*
++				 * assuming here modem SSR, AP can remove
++				 * the delay in this case
++				 */
++				IPAERR("failed to force clear %d\n", res);
++				IPAERR("remove delay from SCND reg\n");
++				ep_ctrl_scnd.endp_delay = false;
++				ipahal_write_reg_n_fields(
++						IPA_ENDP_INIT_CTRL_SCND_n,
++						clnt_hdl, &ep_ctrl_scnd);
++			} else {
++				disable_force_clear = true;
++			}
+ 		}
+ retry_gsi_stop:
+ 		res = ipa3_stop_gsi_channel(ipa_ep_idx);

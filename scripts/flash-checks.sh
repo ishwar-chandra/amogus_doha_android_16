@@ -52,19 +52,36 @@ hs0=$(sh cat /sys/devices/system/cpu/cpu0/cpufreq/schedutil/hispeed_freq)
 [ "$hs0" = 1305600 ] && ok "post_boot ran (hispeed_freq=1305600)" || bad "post_boot tuning absent (hispeed_freq='$hs0') - the script may still crash, check /data/tombstones"
 echo
 
-echo "3) SIM 1 / modem carrier config (the Vi/Jio call issue)"
+echo "3) SIM 1 / modem carrier config (the VoLTE slot bug)"
 mcfg=$(sh getprop persist.vendor.radio.mcfg_version)
-echo "   mcfg_version: $mcfg"
-if echo "$mcfg" | grep -q null; then
-  bad "one SIM slot has NULL modem carrier config (the known SIM 1 call bug state)"
-elif [ -z "$mcfg" ]; then
+mnum=$(sh getprop persist.vendor.radio.mcfg_ver_num)
+echo "   mcfg_version: $mcfg   (slot 0,slot 1)"
+echo "   mcfg_ver_num: $mnum"
+if [ -z "$mcfg" ]; then
   echo "  [ .. ] mcfg_version prop empty on this build"
 else
-  ok "both SIM slots have a modem carrier config ($mcfg)"
+  slot0=${mcfg%%,*}
+  slot1=${mcfg#*,}
+  n0=${mnum%%,*}
+  n1=${mnum#*,}
+  case "$slot0/$n0" in
+    null/*|*/0|*/0x0|*/)
+      bad "SIM 1 stack has NO modem carrier config (slot0=$slot0 ver=$n0) - VoLTE/IMS cannot register" ;;
+    *)
+      ok "SIM 1 stack has a modem carrier config ($slot0, ver $n0)" ;;
+  esac
+  case "$slot1/$n1" in
+    null/*|*/0|*/0x0|*/)
+      bad "SIM 2 stack has NO modem carrier config (slot1=$slot1 ver=$n1)" ;;
+    *)
+      ok "SIM 2 stack has a modem carrier config ($slot1, ver $n1)" ;;
+  esac
 fi
+ims=$(sh dumpsys phone 2>/dev/null | grep -c 'mImsRegistered=true')
+echo "   IMS registrations reported by dumpsys phone: ${ims:-0} (informational; not all builds expose every slot)"
 net=$(sh getprop gsm.network.type)
 echo "   network type per slot: $net"
-[ "$(echo "$net" | cut -d, -f1)" = LTE ] && ok "SIM 1 camped on LTE" || bad "SIM 1 NOT on LTE ($net) - calls on Vi will fail"
+[ "$(echo "$net" | cut -d, -f1)" = LTE ] && ok "SIM 1 camped on LTE" || bad "SIM 1 NOT on LTE ($net) - calls on SIM 1 will fail"
 echo "   Try, in order, if it failed:"
 echo "     a) adb shell cmd connectivity airplane-mode enable; sleep 5; disable"
 echo "     b) reboot with only SIM 1 inserted, check again, then reinsert SIM 2"
