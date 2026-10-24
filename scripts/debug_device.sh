@@ -792,18 +792,41 @@ fi
 # ---------------------------------------------------------------------------
 redact_tree() {
   find "$1" -type f -size -60M -print0 | while IFS= read -r -d '' f; do
-    grep -Iq . "$f" 2>/dev/null || continue
-    sed -E -i \
-      -e 's/[0-9]{15,20}/<ID-REDACTED>/g' \
-      -e 's/\+[0-9]{8,15}/+<NUMBER-REDACTED>/g' \
-      -e '/[Nn]umber|msisdn|MSISDN|[Ll]ine1|mdn=/ s/[0-9][0-9 ()-]{6,}[0-9]/<NUMBER-REDACTED>/g' \
-      -e 's/([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}/xx:xx:xx:xx:xx:xx/g' \
-      -e 's/(serial[A-Za-z_.]*\]?[:=] ?\[?)[A-Za-z0-9]{6,}/\1<REDACTED>/Ig' \
-      -e 's/(SSID[:=] ?)"?[^",]+"?/\1"<SSID>"/Ig' \
-      -e 's/(wpa_passphrase|psk)=.*/\1=<REDACTED>/Ig' \
-      -e 's/^(android_id|bluetooth_address|bluetooth_name|device_name)=.*/\1=<REDACTED>/' \
-      -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email>/g' \
-      "$f" 2>/dev/null
+    # Skip real binaries by extension, but NEVER skip a text file just because
+    # grep calls it binary. /proc/device-tree/chosen/bootargs contains NUL
+    # bytes and carries androidboot.serialno + wifimacaddr + btmacaddr; the
+    # old `grep -Iq .` guard skipped exactly that file and leaked the serial
+    # and all three MACs into the "-redacted" copy.
+    case "$f" in
+      *.so|*.apk|*.jar|*.dex|*.odex|*.vdex|*.art|*.oat|*.img|*.bin|*.png|*.jpg|*.jpeg|*.gif|*.webp|*.zip|*.gz|*.tgz|*.tar|*.db|*.sqlite|*.mp4|*.mp3|*.ogg|*.ttf|*.otf) continue ;;
+    esac
+    if command -v perl >/dev/null 2>&1; then
+      # Perl is byte-oriented: it handles NULs and invalid UTF-8, which
+      # MSYS/Windows sed rejects with "stream did not contain valid UTF-8".
+      perl -i -pe '
+        s/[0-9]{15,20}/<ID-REDACTED>/g;
+        s/\+[0-9]{8,15}/+<NUMBER-REDACTED>/g;
+        s/([0-9][0-9 ()-]{6,}[0-9])/<NUMBER-REDACTED>/g if /[Nn]umber|msisdn|MSISDN|[Ll]ine1|mdn=/;
+        s/([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}/xx:xx:xx:xx:xx:xx/g;
+        s/(serial[A-Za-z_.]*\]?[:=] ?\[?)[A-Za-z0-9]{6,}/$1<REDACTED>/ig;
+        s/(SSID[:=] ?)"?[^",\r\n]+"?/$1"<SSID>"/ig;
+        s/(wpa_passphrase|psk)=.*/$1=<REDACTED>/ig;
+        s/^(android_id|bluetooth_address|bluetooth_name|device_name)=.*/$1=<REDACTED>/;
+        s/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email>/g;
+      ' "$f" 2>/dev/null
+    else
+      LC_ALL=C sed -E -i \
+        -e 's/[0-9]{15,20}/<ID-REDACTED>/g' \
+        -e 's/\+[0-9]{8,15}/+<NUMBER-REDACTED>/g' \
+        -e '/[Nn]umber|msisdn|MSISDN|[Ll]ine1|mdn=/ s/[0-9][0-9 ()-]{6,}[0-9]/<NUMBER-REDACTED>/g' \
+        -e 's/([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}/xx:xx:xx:xx:xx:xx/g' \
+        -e 's/(serial[A-Za-z_.]*\]?[:=] ?\[?)[A-Za-z0-9]{6,}/\1<REDACTED>/Ig' \
+        -e 's/(SSID[:=] ?)"?[^",]+"?/\1"<SSID>"/Ig' \
+        -e 's/(wpa_passphrase|psk)=.*/\1=<REDACTED>/Ig' \
+        -e 's/^(android_id|bluetooth_address|bluetooth_name|device_name)=.*/\1=<REDACTED>/' \
+        -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email>/g' \
+        "$f" 2>/dev/null
+    fi
   done
 }
 if [ "$REDACT" = 1 ]; then
