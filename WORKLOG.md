@@ -857,3 +857,38 @@ search found no crDroid 12 build for doha (not exhaustive).
 **Next:** §G items 0-4 (LineageOS build + flash + flash-checks) remain the
 priority; then item 11 (first crDroid 16 build) and item 12 (complete the
 mirror pool).
+
+---
+
+## Session 12 (2026-10-24) — upstream v1.0.2/v1.2.0 comparison
+
+Compared `christiaan/lineage-23-amogus_doha` **v1.0.2** and **v1.2.0**
+against this kit. The tag diffs are small:
+
+- **v1.0.0 -> v1.0.2** touches only `README.md`,
+  `patches/device/motorola/amogus_doha.patch` (FocalTech/Novatek touch
+  drivers) and `patches/kernel/motorola/msm-4.14.patch` (WPA3 plus the
+  `kernel/sched/core.c` post_boot fix).
+- **v1.0.2 -> v1.2.0** touches only `README.md` and `default.xml`: the
+  kernel project moves to `christiaan/android_kernel_motorola_msm-4.14`
+  at `858f52e`, branch `lts` (4.14.357-openela). The LTS merge's USB
+  gadget, extcon, SD/SDIO and AIO fixes live in that kernel repo, not in
+  this build kit.
+
+Already present here: the touch hunk (all seven modules match upstream),
+both WPA3 hunks, the IPA force-clear fix, the MCFG/VoLTE props and
+latent fixes (upstream still lists dual-SIM as a known issue), and the
+governor shim.
+
+Missing, now added: the v1.0.2 `kernel/sched/core.c` hunk that returns 0
+from the early-boot `sched_updown_migrate` write, so
+`init.qcom.post_boot.sh` does not abort on its first write. Verified with
+`git apply --check` against both `6509e92` (4.14.190) and `858f52e`
+(4.14.357-openela): clean, offsets 1 and 3 lines.
+
+Not adopted: the v1.2.0 LTS kernel pin. The kit remains on Aldair402
+`6509e92` (4.14.190). Switching needs a manifest + mirror change
+(`christiaan` remote, ~1.5 GB kernel mirror) and device testing: upstream
+tested only a Himax/FPC XT2019-1, not the FocalTech panel this unit has,
+and not the XT2019-2 dual-SIM model. Our kernel patch applies to both
+trees, so the switch is mechanically ready for a dedicated test build.

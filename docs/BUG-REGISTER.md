@@ -153,6 +153,14 @@ Fix: scripts/apply-latent-fixes.sh re-points the post_boot service (and
 the init.aospa.perf.common.sh exec + any shipped script shebangs) at
 /system/bin/sh - the ROM's own current mksh, built against the same
 bionic. The script itself is unmodified vendor content.
+
+Upstream v1.0.2 adds a second, complementary fix in the kernel:
+`__sched_updown_migrate_handler` now sets `ret = 0` for early-boot
+writes. Leaving `ret` unset returned a stale register value as the byte
+count, and `init.qcom.post_boot.sh` aborted on its first
+`sched_updown_migrate` write. Added to
+`patches/kernel/motorola/msm-4.14.patch` on 2026-10-24; it applies on
+top of both 4.14.190 and the upstream 4.14.357 LTS tree.
 Verify: flash-checks.sh section 2 - no tombstone for init.qcom.post_,
 governor schedutil, `init.svc.vendor.post_boot` = stopped (oneshot,
 completed) AND tuning values present (hispeed_freq = 1305600/1401600).
