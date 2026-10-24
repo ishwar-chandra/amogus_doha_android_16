@@ -6,7 +6,15 @@ variants/dolby/audio_effects.dolby-stock.xml
 zips/
 /lineage/
 *.log
+logs/
 /device dumps/
+.doha.conf
+
+# Local signing material - never commit
+*.jks
+*.keystore
+*.pk8
+*.p12
 
 # Restored mirror pool is GENERATED from mirrors/repos/*.tgz - never commit
 mirrors/git/
